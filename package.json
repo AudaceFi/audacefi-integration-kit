@@ -1,0 +1,34 @@
+{
+  "name": "audacefi-integration-kit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "scripts": {
+    "test": "node --import ./scripts/offline-guard.mjs --test test/*.test.ts test/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "demo": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js demo",
+    "demo:bot": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js replay --strategy baseline",
+    "demo:agent": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js replay --strategy model-fixture",
+    "replay": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js replay",
+    "audit:content": "node scripts/audit-content.mjs",
+    "check": "npm run typecheck && npm test && npm run build && npm run audit:content && npm run format:check",
+    "prepublishOnly": "node -e \"throw new Error('Package publication requires a separate owner decision')\"",
+    "format:check": "node scripts/check-format.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "typescript": "5.9.3"
+  },
+  "license": "Apache-2.0",
+  "description": "AudaceFi integration client and guarded operator flows for AI agents and trading bots; locally simulated qualification.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  }
+}

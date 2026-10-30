@@ -1,0 +1,12 @@
+{
+  "contractVersion": "1.0.0",
+  "projection": "audacefi.starter.read-state.v1",
+  "reviewDate": "2026-10-29",
+  "sourceReviewed": true,
+  "liveVerified": false,
+  "executionImplemented": "Explicit client, guarded flow and concrete devnet bench reference adapters; no real execution performed",
+  "durableProtocol": "audacefi.bench.submission.v1",
+  "serverCapability": "optional, deployment availability must be independently verified",
+  "sampleData": "synthetic only",
+  "access": "Mandatory AudaceFi onboarding for each account's individual API key; reference adapters provided, deployment pins/API approval/RPC provider/wallet wiring qualified by operator"
+}

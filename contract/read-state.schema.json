@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:audacefi:starter:read-state-projection:v1",
+  "title": "Read-state projection consumed by the offline starter, not the full server DTO",
+  "type": "object",
+  "required": ["asOf", "mode", "category", "season", "wallet"],
+  "properties": {
+    "asOf": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "mode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "category": {
+      "enum": ["degen", "crypto-bro", "whale"]
+    },
+    "season": {
+      "type": "object",
+      "required": ["active"],
+      "properties": {
+        "active": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "id",
+                "status",
+                "executionMode",
+                "startsAt",
+                "endsAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "status": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "executionMode": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "startsAt": {
+                  "type": ["string", "null"],
+                  "format": "date-time",
+                  "minLength": 24,
+                  "maxLength": 24,
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+                },
+                "endsAt": {
+                  "type": ["string", "null"],
+                  "format": "date-time",
+                  "minLength": 24,
+                  "maxLength": 24,
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "wallet": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["state", "code"],
+          "properties": {
+            "state": {
+              "const": "unavailable"
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": [
+            "state",
+            "seasonId",
+            "seasonExecutionMode",
+            "mode",
+            "category",
+            "walletAddress"
+          ],
+          "properties": {
+            "state": {
+              "const": "ok"
+            },
+            "seasonId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "seasonExecutionMode": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "mode": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "category": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "walletAddress": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    }
+  },
+  "additionalProperties": true
+}

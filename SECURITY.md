@@ -1,0 +1,15 @@
+# Security reporting
+
+The starter includes a connected API client and operator flows, locally tested through synthetic transports and signing fixtures. No active deployment, provider, real account, wallet or chain qualification is asserted.
+
+The accountable maintainer is **Jordan ([@buchjordan](https://github.com/buchjordan))**, designated by the owner. The security reporting channel is **GitHub Private Vulnerability Reporting**: Security -> Report a vulnerability, or the [reporting form](https://github.com/AudaceFi/audacefi-integration-kit/security/advisories/new). GitHub offers this form only where the repository is eligible and a maintainer has enabled it; see [configuration and eligibility](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).
+
+If the reporting form is not available to you, do not disclose details publicly: ask the designated maintainer through a private contact you already have to arrange confidential reporting. No alternate contact is provisioned or verified by this document. Never place vulnerability details in a public issue.
+
+Never include credentials, private keys, raw signed transactions, real account responses or operator journals in public issues, PRs, fixtures or logs. Prefer a minimal synthetic reproduction and affected source revision. Client error objects deliberately discard remote bodies and transport causes; inspect sensitive diagnostics only within your own reviewed private operational process. This document provides no email address and does not activate a GitHub setting. Maintainers verify the actual reporting route for each distributed revision; see [AUDITS](docs/AUDITS.md).
+
+The API key, account session, wallet player signer and server cosign authority are separate. Treat target configuration and adapter functions as trusted application code; never load executable model text or unreviewed plugins. Preserve write opt-in, journal budget/key binding, pending-operation blocking, exact-transaction reconciliation and independently verified finality. Broad development integrations and changed permissions require owner review before opening or new contributor access.
+
+Security triage is best effort with intended weekly review, without a contractual response or fix deadline. Passing tests and audit reviews are bounded engineering evidence. See [AUDITS](docs/AUDITS.md) and [RECOVERY](docs/RECOVERY.md).
+
+The reference suite supplies concrete protocol checks and read-only RPC access with no automatically selected provider. Qualify the supplied deployment pins, API approval window, RPC data source and wallet callbacks independently. Provider responses are trusted observations; the library is not a chain light client. A builder/checker sharing the same ABI needs independent review and external vectors beyond self-consistency. See [REFERENCE](docs/REFERENCE.md) for bounds, asynchronous rechecks and unsupported transaction forms. No real provider or wallet interaction was used for this preparation.

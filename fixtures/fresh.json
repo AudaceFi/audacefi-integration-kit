@@ -1,0 +1,193 @@
+{
+  "synthetic": true,
+  "config": {
+    "category": "crypto-bro",
+    "allowlist": [
+      "SYNTH_ASSET"
+    ],
+    "maxAgeMs": 120000,
+    "maxFutureMs": 30000,
+    "perProposalCents": 1000,
+    "maxTotalCents": 2000,
+    "maxProposals": 2,
+    "signalThresholdBps": 100
+  },
+  "frames": [
+    {
+      "frameId": "synthetic-frame-1",
+      "clockMs": 1893499200000,
+      "state": {
+        "asOf": "2030-01-01T12:00:00.000Z",
+        "mode": "real",
+        "category": "crypto-bro",
+        "season": {
+          "active": {
+            "id": "synthetic-season",
+            "number": 1,
+            "status": "active",
+            "executionMode": "devnet_onchain",
+            "startsAt": "2030-01-01T11:59:00.000Z",
+            "endsAt": "2030-01-01T12:10:00.000Z"
+          },
+          "upcoming": null
+        },
+        "wallet": {
+          "state": "ok",
+          "seasonId": "synthetic-season",
+          "seasonExecutionMode": "devnet_onchain",
+          "mode": "real",
+          "category": "crypto_bro",
+          "walletAddress": "synthetic-wallet"
+        }
+      },
+      "market": {
+        "mint": "SYNTH_ASSET",
+        "observedAtMs": 1893499200000,
+        "signalBps": 150
+      },
+      "portfolio": {
+        "observedAtMs": 1893499200000,
+        "cashCents": 100000,
+        "positions": [
+          {
+            "mint": "SYNTH_ASSET",
+            "valueCents": 10000
+          }
+        ]
+      },
+      "modelReply": "{\"action\":\"BUY\",\"mint\":\"SYNTH_ASSET\",\"amountCents\":1000}"
+    },
+    {
+      "frameId": "synthetic-frame-2",
+      "clockMs": 1893499201000,
+      "state": {
+        "asOf": "2030-01-01T12:00:00.000Z",
+        "mode": "real",
+        "category": "crypto-bro",
+        "season": {
+          "active": {
+            "id": "synthetic-season",
+            "number": 1,
+            "status": "active",
+            "executionMode": "devnet_onchain",
+            "startsAt": "2030-01-01T11:59:00.000Z",
+            "endsAt": "2030-01-01T12:10:00.000Z"
+          },
+          "upcoming": null
+        },
+        "wallet": {
+          "state": "ok",
+          "seasonId": "synthetic-season",
+          "seasonExecutionMode": "devnet_onchain",
+          "mode": "real",
+          "category": "crypto_bro",
+          "walletAddress": "synthetic-wallet"
+        }
+      },
+      "market": {
+        "mint": "SYNTH_ASSET",
+        "observedAtMs": 1893499200000,
+        "signalBps": -150
+      },
+      "portfolio": {
+        "observedAtMs": 1893499200000,
+        "cashCents": 100000,
+        "positions": [
+          {
+            "mint": "SYNTH_ASSET",
+            "valueCents": 10000
+          }
+        ]
+      },
+      "modelReply": "{\"action\":\"BUY\",\"mint\":\"SYNTH_ASSET\",\"amountCents\":1000}"
+    },
+    {
+      "frameId": "synthetic-frame-3",
+      "clockMs": 1893499202000,
+      "state": {
+        "asOf": "2030-01-01T12:00:00.000Z",
+        "mode": "real",
+        "category": "crypto-bro",
+        "season": {
+          "active": {
+            "id": "synthetic-season",
+            "number": 1,
+            "status": "active",
+            "executionMode": "devnet_onchain",
+            "startsAt": "2030-01-01T11:59:00.000Z",
+            "endsAt": "2030-01-01T12:10:00.000Z"
+          },
+          "upcoming": null
+        },
+        "wallet": {
+          "state": "ok",
+          "seasonId": "synthetic-season",
+          "seasonExecutionMode": "devnet_onchain",
+          "mode": "real",
+          "category": "crypto_bro",
+          "walletAddress": "synthetic-wallet"
+        }
+      },
+      "market": {
+        "mint": "SYNTH_ASSET",
+        "observedAtMs": 1893499200000,
+        "signalBps": 160
+      },
+      "portfolio": {
+        "observedAtMs": 1893499200000,
+        "cashCents": 100000,
+        "positions": [
+          {
+            "mint": "SYNTH_ASSET",
+            "valueCents": 10000
+          }
+        ]
+      },
+      "modelReply": "{\"action\":\"BUY\",\"mint\":\"SYNTH_ASSET\",\"amountCents\":1000}"
+    },
+    {
+      "frameId": "synthetic-frame-4",
+      "clockMs": 1893499203000,
+      "state": {
+        "asOf": "2030-01-01T12:00:00.000Z",
+        "mode": "real",
+        "category": "crypto-bro",
+        "season": {
+          "active": {
+            "id": "synthetic-season",
+            "number": 1,
+            "status": "active",
+            "executionMode": "devnet_onchain",
+            "startsAt": "2030-01-01T11:59:00.000Z",
+            "endsAt": "2030-01-01T12:10:00.000Z"
+          },
+          "upcoming": null
+        },
+        "wallet": {
+          "state": "ok",
+          "seasonId": "synthetic-season",
+          "seasonExecutionMode": "devnet_onchain",
+          "mode": "real",
+          "category": "crypto_bro",
+          "walletAddress": "synthetic-wallet"
+        }
+      },
+      "market": {
+        "mint": "SYNTH_ASSET",
+        "observedAtMs": 1893499200000,
+        "signalBps": 170
+      },
+      "portfolio": {
+        "observedAtMs": 1893499200000,
+        "cashCents": 100000,
+        "positions": [
+          {
+            "mint": "SYNTH_ASSET",
+            "valueCents": 10000
+          }
+        ]
+      },
+      "modelReply": "{\"action\":\"BUY\",\"mint\":\"SYNTH_ASSET\",\"amountCents\":1000}"
+    }
+  ]
+}

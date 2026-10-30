@@ -1,0 +1,1016 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AudaceFi starter consumer contract",
+    "version": "1.0.0",
+    "description": "Source-reviewed consumer shapes. Private source candidate; optional durable routes are not certified as deployed. No servers or credentials embedded."
+  },
+  "paths": {
+    "/v1/me/state": {
+      "get": {
+        "operationId": "readOwnState",
+        "security": [
+          {
+            "ApiKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "degen",
+                "crypto-bro",
+                "whale"
+              ]
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "real",
+                "demo"
+              ],
+              "default": "real"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "State with explicit unavailable sections. asOf is assembly time, not observation time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./read-state.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BAD_REQUEST query"
+          },
+          "401": {
+            "description": "Authentication refused"
+          },
+          "403": {
+            "description": "Scope or account access refused"
+          },
+          "429": {
+            "description": "Deployment quota exceeded; do not busy-loop"
+          }
+        }
+      }
+    },
+    "/v1/swap-intents": {
+      "post": {
+        "operationId": "createIntent",
+        "security": [
+          {
+            "ApiKeyBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumed response; not proof of final chain execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Intent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "401": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "403": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "404": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "409": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "429": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "500": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "502": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "503": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntentInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/swap-intents/{id}/quote": {
+      "post": {
+        "operationId": "quote",
+        "security": [
+          {
+            "ApiKeyBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumed response; not proof of final chain execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "401": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "403": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "404": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "409": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "429": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "500": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "502": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "503": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "amountInRaw"
+                ],
+                "properties": {
+                  "amountInRaw": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{0,19}$",
+                    "description": "Positive u64, validated at runtime"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/swap-intents/{id}/signature": {
+      "post": {
+        "operationId": "recordSignature",
+        "security": [
+          {
+            "ApiKeyBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumed response; not proof of final chain execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "intentId",
+                    "status"
+                  ],
+                  "properties": {
+                    "intentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "const": "signed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "401": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "403": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "404": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "409": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "429": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "500": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "502": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "503": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignatureInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/swap-intents/{id}/submit-durable": {
+      "post": {
+        "operationId": "submitDurable",
+        "security": [
+          {
+            "ApiKeyBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumed response; not proof of final chain execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "401": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "403": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "404": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "409": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "429": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "500": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "502": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "503": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "description": "Optional server capability; never fall back to cosign or RPC"
+    },
+    "/v1/swap-intents/{id}/submission": {
+      "get": {
+        "operationId": "readSubmission",
+        "security": [
+          {
+            "ApiKeyBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumed response; not proof of final chain execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionLookup"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "401": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "403": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "404": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "409": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "429": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "500": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "502": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "503": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "description": "Read only, absence does not authorize replacement"
+    },
+    "/v1/swap-intents/{id}/result": {
+      "post": {
+        "operationId": "recordFinalResult",
+        "security": [
+          {
+            "ApiKeyBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumed response; not proof of final chain execution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "intentId",
+                    "status"
+                  ],
+                  "properties": {
+                    "intentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "enum": [
+                        "confirmed",
+                        "failed"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "401": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "403": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "404": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "409": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "429": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "500": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "502": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          },
+          "503": {
+            "description": "Refusal or unavailable response; write outcome conservatively ambiguous, no automatic retry"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "confirmed",
+                      "failed"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/me/allowlist": {
+      "get": {
+        "summary": "Read consumed negotiable-mint projection for this API-key account in real mode",
+        "description": "API-key read scope. Query category is snake_case. The response season/category must match the operator; extra token metadata is ignored. A read request does not enroll an account or issue a key.",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "degen",
+                "crypto_bro",
+                "whale"
+              ]
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "const": "real"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumed projection; no independent market-data timestamp is supplied by this route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "seasonId",
+                    "category",
+                    "allowlistFrozen",
+                    "tokens"
+                  ],
+                  "properties": {
+                    "seasonId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "degen",
+                        "crypto_bro",
+                        "whale"
+                      ]
+                    },
+                    "allowlistFrozen": {
+                      "type": "boolean"
+                    },
+                    "tokens": {
+                      "type": "array",
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "mint",
+                          "decimals",
+                          "exempt",
+                          "eligible"
+                        ],
+                        "properties": {
+                          "mint": {
+                            "type": "string",
+                            "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+                          },
+                          "decimals": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0,
+                            "maximum": 9
+                          },
+                          "exempt": {
+                            "type": "boolean"
+                          },
+                          "eligible": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Revocable API key supplied in memory; read for reads, execute for writes. Separate from account session and player signing."
+      }
+    },
+    "schemas": {
+      "Intent": {
+        "type": "object",
+        "required": [
+          "intentId",
+          "status",
+          "replayed"
+        ],
+        "properties": {
+          "intentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "const": "built"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "IntentInput": {
+        "type": "object",
+        "required": [
+          "seasonId",
+          "category",
+          "tokenInMint",
+          "tokenOutMint",
+          "amountIn",
+          "idempotencyKey",
+          "surface"
+        ],
+        "properties": {
+          "seasonId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "enum": [
+              "degen",
+              "crypto_bro",
+              "whale"
+            ]
+          },
+          "tokenInMint": {
+            "type": "string",
+            "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+          },
+          "tokenOutMint": {
+            "type": "string",
+            "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+          },
+          "amountIn": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "surface": {
+            "const": "api"
+          }
+        }
+      },
+      "Quote": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "intentId",
+              "quoteId",
+              "amountInRaw",
+              "expiresAt",
+              "ttlSeconds",
+              "mintMainnet",
+              "mintDevnet",
+              "direction",
+              "price",
+              "expo",
+              "priceUsd"
+            ],
+            "properties": {
+              "intentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "quoteId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amountInRaw": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,19}$",
+                "description": "Positive u64, validated at runtime"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "ttlSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 300
+              },
+              "mintMainnet": {
+                "type": "string",
+                "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+              },
+              "mintDevnet": {
+                "type": "string",
+                "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+              },
+              "direction": {
+                "enum": [
+                  "buy",
+                  "sell"
+                ]
+              },
+              "price": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,19}$",
+                "description": "Positive u64, validated at runtime"
+              },
+              "expo": {
+                "type": "integer",
+                "minimum": -18,
+                "maximum": 18
+              },
+              "priceUsd": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "intentId",
+              "quoteId",
+              "amountInRaw",
+              "expiresAt",
+              "ttlSeconds",
+              "kind",
+              "quoteIdOut",
+              "mintInMainnet",
+              "mintInDevnet",
+              "mintOutMainnet",
+              "mintOutDevnet",
+              "priceIn",
+              "priceOut",
+              "amountOutGrossRaw",
+              "feeRaw",
+              "feeBps",
+              "amountOutNetRaw"
+            ],
+            "properties": {
+              "intentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "quoteId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amountInRaw": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,19}$",
+                "description": "Positive u64, validated at runtime"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "ttlSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 300
+              },
+              "kind": {
+                "const": "route"
+              },
+              "quoteIdOut": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "mintInMainnet": {
+                "type": "string",
+                "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+              },
+              "mintInDevnet": {
+                "type": "string",
+                "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+              },
+              "mintOutMainnet": {
+                "type": "string",
+                "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+              },
+              "mintOutDevnet": {
+                "type": "string",
+                "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+              },
+              "priceIn": {
+                "type": "object",
+                "required": [
+                  "price",
+                  "expo",
+                  "priceUsd"
+                ],
+                "properties": {
+                  "price": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{0,19}$",
+                    "description": "Positive u64, validated at runtime"
+                  },
+                  "expo": {
+                    "type": "integer",
+                    "minimum": -18,
+                    "maximum": 18
+                  },
+                  "priceUsd": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              },
+              "priceOut": {
+                "type": "object",
+                "required": [
+                  "price",
+                  "expo",
+                  "priceUsd"
+                ],
+                "properties": {
+                  "price": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{0,19}$",
+                    "description": "Positive u64, validated at runtime"
+                  },
+                  "expo": {
+                    "type": "integer",
+                    "minimum": -18,
+                    "maximum": 18
+                  },
+                  "priceUsd": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              },
+              "amountOutGrossRaw": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,19}$",
+                "description": "Positive u64, validated at runtime"
+              },
+              "feeRaw": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]{0,19})$"
+              },
+              "feeBps": {
+                "const": 20
+              },
+              "amountOutNetRaw": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,19}$",
+                "description": "Positive u64, validated at runtime"
+              }
+            }
+          }
+        ]
+      },
+      "Submission": {
+        "type": "object",
+        "required": [
+          "protocol",
+          "intentId",
+          "quoteId",
+          "quoteOutId",
+          "messageHash",
+          "playerSignature",
+          "playerPublicKey",
+          "txid",
+          "recordedAt",
+          "state"
+        ],
+        "properties": {
+          "protocol": {
+            "const": "audacefi.bench.submission.v1"
+          },
+          "intentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quoteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quoteOutId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "playerSignature": {
+            "type": "string"
+          },
+          "playerPublicKey": {
+            "type": "string",
+            "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "enum": [
+              "SUBMITTED",
+              "RECORDED",
+              "UNKNOWN"
+            ]
+          }
+        }
+      },
+      "SubmissionLookup": {
+        "type": "object",
+        "required": [
+          "protocol",
+          "submission"
+        ],
+        "properties": {
+          "protocol": {
+            "const": "audacefi.bench.submission.v1"
+          },
+          "submission": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Submission"
+              }
+            ]
+          }
+        }
+      },
+      "SignatureInput": {
+        "type": "object",
+        "required": [
+          "signature"
+        ],
+        "properties": {
+          "signature": {
+            "type": "string"
+          }
+        }
+      },
+      "SubmitInput": {
+        "type": "object",
+        "required": [
+          "quoteId",
+          "transaction"
+        ],
+        "properties": {
+          "quoteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quoteOutId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "transaction": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 1800,
+            "contentEncoding": "base64"
+          }
+        }
+      }
+    }
+  }
+}
