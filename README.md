@@ -18,7 +18,7 @@ A TypeScript integration client for operators connecting an existing **AI agent*
 
 ## Install and verify locally
 
-Clone the repository and use the reviewed `stable` branch. Private repository access requires a GitHub account with permission; it does not require an AudaceFi API key. Open a terminal at the repository root, containing `package.json`. Reference tools are Git, Node24.22.1 and npm11.19.1, locally qualified on Windows and Ubuntu under WSL using a native Linux temporary filesystem. Select those tools and verify `git --version`, `node --version` and `npm --version`. Node's official release is linked in the [offline guide](docs/OFFLINE.md).
+This is a public source repository. Clone it and use the reviewed `stable` branch. No GitHub repository invitation or AudaceFi API key is required to read or clone the source. AudaceFi onboarding and an individual API key are required before any real connection. Open a terminal at the repository root, containing `package.json`. Reference tools are Git, Node24.22.1 and npm11.19.1, locally qualified on Windows and Ubuntu under WSL using a native Linux temporary filesystem. Select those tools and verify `git --version`, `node --version` and `npm --version`. Node's official release is linked in the [offline guide](docs/OFFLINE.md).
 
 ```sh
 git clone --branch stable https://github.com/AudaceFi/audacefi-integration-kit.git
@@ -78,4 +78,4 @@ The reference adapter implements the ports for a narrow, source-reviewed protoco
 
 ## License
 
-Original source and documentation use [Apache-2.0](LICENSE); dependencies retain their own terms. No license supplies service access, accounts, credentials or trademark rights. `private: true` and a publication guard prevent accidental npm publication; source-hosting visibility is a separate decision. Making source available does not publish an npm package or authorize any live operation.
+Original source and documentation use [Apache-2.0](LICENSE); dependencies retain their own terms. No license supplies service access, accounts, credentials or trademark rights. `package.json` sets `private: true` as an npm publication safeguard, alongside a publication guard; this GitHub repository is public. Publishing the source grants no service access or live-operation authorization.
