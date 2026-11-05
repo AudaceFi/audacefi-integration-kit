@@ -52,6 +52,11 @@ export function derivePda(program: string, seeds: readonly Uint8Array[]): { addr
 export function associatedAddress(owner: string, mint: string): string { return derivePda(ASSOCIATED_TOKEN_PROGRAM, [decode58(owner, 32), decode58(TOKEN_PROGRAM, 32), decode58(mint, 32)]).address; }
 export interface AccountMeta { address: string; signer: boolean; writable: boolean }
 export interface Instruction { program: string; accounts: AccountMeta[]; data: Uint8Array }
+// The server compares bytes rebuilt with web3.js's legacy Transaction compiler.
+const legacyKeyOrder = new Intl.Collator("en", {
+  localeMatcher: "best fit", usage: "sort", sensitivity: "variant",
+  ignorePunctuation: false, numeric: false, caseFirst: "lower",
+});
 function compact(n: number): Buffer { if (!Number.isInteger(n) || n < 0 || n > 65535) throw new Error("INVALID_SHORTVEC"); const bytes = []; do { let v = n & 127; n >>>= 7; if (n) v |= 128; bytes.push(v); } while (n); return Buffer.from(bytes); }
 export function compileLegacy(player: string, poster: string, blockhash: string, instructions: readonly Instruction[]): string {
   if (player === poster || !isCurvePoint(decode58(player, 32)) || !isCurvePoint(decode58(poster, 32))) throw new Error("TWO_DISTINCT_SIGNERS_REQUIRED");
@@ -59,7 +64,11 @@ export function compileLegacy(player: string, poster: string, blockhash: string,
   const add = (m: AccountMeta) => { decode58(m.address, 32); const old = metas.get(m.address); metas.set(m.address, { address: m.address, signer: m.signer || old?.signer === true, writable: m.writable || old?.writable === true }); };
   add({ address: player, signer: true, writable: true }); add({ address: poster, signer: true, writable: true });
   for (const ix of instructions) { ix.accounts.forEach(add); add({ address: ix.program, signer: false, writable: false }); }
-  const keys = [...metas.values()].sort((a, b) => Number(b.signer) - Number(a.signer) || Number(b.writable) - Number(a.writable));
+  const feePayer = metas.get(player)!;
+  metas.delete(player);
+  const keys = [feePayer, ...[...metas.values()].sort((a, b) =>
+    Number(b.signer) - Number(a.signer) || Number(b.writable) - Number(a.writable) ||
+    legacyKeyOrder.compare(a.address, b.address))];
   if (keys[0]?.address !== player || keys[1]?.address !== poster || keys.filter(k => k.signer).length !== 2 || keys.length > 32 || instructions.length < 1 || instructions.length > 16) throw new Error("UNEXPECTED_ACCOUNTS");
   const position = (key: string) => { const n = keys.findIndex(k => k.address === key); if (n < 0) throw new Error("MISSING_ACCOUNT"); return n; };
   const message = Buffer.concat([Buffer.from([2, 0, keys.filter(k => !k.signer && !k.writable).length]), compact(keys.length), ...keys.map(k => decode58(k.address, 32)), decode58(blockhash, 32), compact(instructions.length), ...instructions.map(ix => Buffer.concat([Buffer.from([position(ix.program)]), compact(ix.accounts.length), Buffer.from(ix.accounts.map(k => position(k.address))), compact(ix.data.length), Buffer.from(ix.data)]))]);

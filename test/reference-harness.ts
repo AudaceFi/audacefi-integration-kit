@@ -5,7 +5,7 @@ import { createReferenceAdapters } from "../src/reference.ts";
 import { SolanaRpcReader } from "../src/rpc.ts";
 import type { BenchProfile } from "../src/bench.ts";
 import { benchAddresses } from "../src/bench.ts";
-import { associatedAddress, ASSOCIATED_TOKEN_PROGRAM, CLOCK_SYSVAR, decode58, discriminator, encode58, hashBytes, SYSTEM_PROGRAM, SYSVAR_OWNER, TOKEN_PROGRAM, UPGRADEABLE_LOADER } from "../src/solana.ts";
+import { associatedAddress, ASSOCIATED_TOKEN_PROGRAM, CLOCK_SYSVAR, decode58, decodeLegacy, discriminator, encode58, hashBytes, SYSTEM_PROGRAM, SYSVAR_OWNER, TOKEN_PROGRAM, UPGRADEABLE_LOADER } from "../src/solana.ts";
 import { asset, clock, harness, syntheticId } from "./connected-harness.ts";
 
 export type ReferenceKind = "buy" | "sell" | "route";
@@ -62,7 +62,7 @@ export function referenceHarness(kind: ReferenceKind = "buy", actor: "ai_agent" 
     if (method === "getSignatureStatuses") return ctx([controls.finalMissing ? null : { slot: controls.rpcSlot, confirmationStatus: controls.finalStatus, confirmations: controls.finalStatus === "finalized" ? null : 1, err: controls.finalError }]);
     if (method === "getTransaction") {
       if (controls.finalMissing) return null;
-      const submitted = old.calls.find(c => c.path.endsWith("/submit-durable"))?.body.transaction;
+      const submitted = old.calls.find(c => c.path.endsWith("/submit-durable") && encode58(decodeLegacy(c.body.transaction).signatures[0]!) === params[0])?.body.transaction;
       if (!submitted) return null;
       const bytes = Buffer.from(submitted, "base64"); sign(null, bytes.subarray(129), poster.privateKey).copy(bytes, 65);
       return { slot: controls.rpcSlot, version: "legacy", transaction: [bytes.toString("base64"), "base64"], meta: { err: controls.finalError } };
