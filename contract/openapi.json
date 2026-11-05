@@ -3,7 +3,7 @@
   "info": {
     "title": "AudaceFi starter consumer contract",
     "version": "1.0.0",
-    "description": "Source-reviewed consumer shapes. Private source candidate; optional durable routes are not certified as deployed. No servers or credentials embedded."
+    "description": "Source-reviewed consumer shapes. Public source contract; optional durable routes are not certified as deployed. No servers or credentials embedded."
   },
   "paths": {
     "/v1/me/state": {
