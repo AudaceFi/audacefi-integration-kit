@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Season 1 off-chain signal pilot, qualified for local preview only.
+
+- Add `parseSpotSignal`, `prepareSpotSignalFromJournal`, the offline `signal:preview` CLI and a Python example for an unranked synthetic `long` then `flat` round trip.
+- `prepareSpotSignalFromJournal` keeps copies of the signal and policy and invalidates earlier unreserved plans before its first journal snapshot, once the signal passes the relevance checks. A failed snapshot leaves older plans invalid. The helper checks for an unresolved operation or a run in progress before reading holdings and compares snapshots on both sides of that read. Plans expire across a module restart.
+- An entry is refused unless the journal, at that moment, has an operation slot and asset budget for each of the policy's `exitAttempts` (2 to 10), each up to its `maxPositionRaw`.
+- An exit larger than the remaining asset budget is refused, or, with the policy's `allowPartialExit`, sells what the budget allows and reports the rest as `residueRaw`.
+- Refuse entries in assets with more than six decimal places, and position limits or asset budgets whose exits the API's JSON number could not carry exactly. These entry settings never block an exit.
+- A signal plan's operation carries `limits`, applied by `runTradingBot` and `runAiAgent`:
+  - an entry's `notAfterMs` is checked under the append lock immediately before the `SIGNED` write;
+  - `outputDecimals` checks the received token's decimals against the verified mapping;
+  - `journalVersion` refuses a plan on another journal, once anything was reserved since its snapshot, or once a newer signal passed the helper's relevance checks.
+- `runOperation` tracks in-flight runs on `FileJournal`. Existing JavaScript journal adapters still support calls without a deadline or journal-version limit. Those limits require a `FileJournal` from the current kit.
+- Order legacy transaction account keys like web3.js 1.98.4 `Transaction.compileMessage`, which the server rebuilds for byte comparison.
+
 ## 1.0.0
 
 Initial AudaceFi Integration Kit source distribution for AI agents and trading bots.

@@ -35,7 +35,9 @@ export function harness(actor:Operation["actor"]="trading_bot") {
   const target:VerifiedTarget={network:"devnet",expectedGenesis:asset(8),observedGenesis:asset(8),durableProtocol:"audacefi.bench.submission.v1",usdcMainnet:asset(1),allowedPrograms:[program],mappings:[{mainnet:asset(1),devnet:asset(3),decimals:6},{mainnet:asset(2),devnet:asset(4),decimals:6}]};
   const quote={intentId:syntheticId(2),quoteId:syntheticId(3),mintMainnet:asset(2),mintDevnet:asset(4),direction:"buy",amountInRaw:operation.amountInRaw,price:"1",expo:0,priceUsd:1,expiresAt:new Date(clock+60000).toISOString(),ttlSeconds:60};
   const calls:{path:string;method:string;body:any}[]=[];
-  let saved:Submission|null=null,playerSignature="",builds=0,signs=0;
+  const submissions = new Map<string, Submission>();
+  const signatures = new Map<string, string>();
+  let builds=0,signs=0;
   const faults={lostSubmit:false,badSubmitBinding:false,rejectPath:"",stateEdit:null as null|((v:any)=>void),quoteEdit:null as null|((v:any)=>void)};
   const json=(v:unknown,status=200)=>new Response(JSON.stringify(v),{status,headers:{"content-type":"application/json"}});
   const transport:FetchPort=async(url,init)=>{
@@ -44,17 +46,24 @@ export function harness(actor:Operation["actor"]="trading_bot") {
     calls.push({path,method,body});
     if(faults.rejectPath && path.endsWith(faults.rejectPath))return json({message:"private-body-not-retained"},503);
     if(path==="/v1/me/state"){const v=structuredClone(state);faults.stateEdit?.(v);return json(v);}
-    if(path==="/v1/swap-intents"){assert.equal(body.category,"crypto_bro");assert.equal(body.surface,"api");return json({intentId:syntheticId(2),status:"built",replayed:false});}
+    if(path==="/v1/swap-intents"){assert.equal(body.category,"crypto_bro");assert.equal(body.surface,"api");return json({intentId:quote.intentId,status:"built",replayed:false});}
     if(path.endsWith("/quote")){const v=structuredClone(quote);faults.quoteEdit?.(v);return json(v);}
-    if(path.endsWith("/signature")){playerSignature=body.signature;return json({intentId:syntheticId(2),status:"signed"});}
+    const intentId = path.split("/").at(-2)!;
+    if(path.endsWith("/signature")){signatures.set(intentId,body.signature);return json({intentId,status:"signed"});}
     if(path.endsWith("/submit-durable")){
       const checked=inspectTransaction(body.transaction,player,target.allowedPrograms,true);
-      saved={protocol:"audacefi.bench.submission.v1",intentId:syntheticId(2),quoteId:body.quoteId,quoteOutId:body.quoteOutId??null,messageHash:checked.messageHash,playerSignature,playerPublicKey:player,txid:playerSignature,recordedAt:new Date(clock).toISOString(),state:"SUBMITTED"};
+      const playerSignature=signatures.get(intentId);
+      assert.ok(playerSignature);
+      const saved:Submission={protocol:"audacefi.bench.submission.v1",intentId,quoteId:body.quoteId,quoteOutId:body.quoteOutId??null,messageHash:checked.messageHash,playerSignature,playerPublicKey:player,txid:playerSignature,recordedAt:new Date(clock).toISOString(),state:"SUBMITTED"};
+      submissions.set(intentId,saved);
       if(faults.lostSubmit)throw new Error("transport-failure-private-material");
       return json(faults.badSubmitBinding?{...saved,messageHash:"0".repeat(64)}:saved);
     }
-    if(path.endsWith("/submission"))return json({protocol:"audacefi.bench.submission.v1",submission:saved?{...saved,state:"RECORDED"}:null});
-    if(path.endsWith("/result"))return json({intentId:syntheticId(2),status:body.status});
+    if(path.endsWith("/submission")){
+      const saved=submissions.get(intentId);
+      return json({protocol:"audacefi.bench.submission.v1",submission:saved?{...saved,state:"RECORDED"}:null});
+    }
+    if(path.endsWith("/result"))return json({intentId,status:body.status});
     throw new Error("unexpected simulated route");
   };
   const ports:OperatorPorts={
