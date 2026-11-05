@@ -67,6 +67,21 @@ test("PDA and legacy codec match published protocol vectors", () => {
   for (let n = 0; n < 32; n++) { const bytes = Buffer.alloc(32, n); assert.deepEqual(decode58(encode58(bytes), 32), bytes); }
   assert.throws(() => decode58("1".repeat(33), 32)); assert.throws(() => derivePda(SYSTEM_PROGRAM, [Buffer.alloc(33)]));
 });
+test("legacy compiler matches the server SDK message when input key order differs", () => {
+  const player = "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9";
+  const poster = "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu";
+  const transaction = compileLegacy(player, poster, "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1", [{
+    program: "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+    accounts: [
+      { address: poster, signer: true, writable: true },
+      { address: "AKkzLhjhyFtM9j7WAhbaqYpFe49cXeJBg2kzLRC2PnNa", signer: false, writable: true },
+      { address: "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe", signer: false, writable: true },
+    ],
+    data: Buffer.from([1]),
+  }]);
+  // Golden message from @solana/web3.js 1.98.4 Transaction.compileMessage().
+  assert.equal(decodeLegacy(transaction).messageHash, "d2df01a38d31242891adab1037fbce675c306bf6601bd38832876dfb88cb7fdc");
+});
 test("bench arithmetic covers independent BUY SELL route and u128 overflow", () => {
   assert.equal(benchAmounts("1000000", 6, 6, "2", 0, "buy").output, 499500n);
   assert.equal(benchAmounts("1000000", 6, 6, "2", 0, "sell").output, 1998000n);

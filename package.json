@@ -14,6 +14,7 @@
     "demo:bot": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js replay --strategy baseline",
     "demo:agent": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js replay --strategy model-fixture",
     "replay": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js replay",
+    "signal:preview": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/signal-cli.js",
     "audit:content": "node scripts/audit-content.mjs",
     "check": "npm run typecheck && npm test && npm run build && npm run audit:content && npm run format:check",
     "prepublishOnly": "node -e \"throw new Error('Package publication requires a separate owner decision')\"",

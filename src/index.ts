@@ -1,9 +1,9 @@
 export { AudaceFiClient, ClientError, parseQuote, parseSubmission } from "./client.ts";
 export type { ClientOptions, FetchPort, IntentInput, Intent, Quote, SingleQuote, RouteQuote, Submission } from "./client.ts";
 export { FileJournal } from "./journal.ts";
-export type { JournalPolicy, JournalEvent } from "./journal.ts";
+export type { JournalPolicy, JournalEvent, JournalCapacity } from "./journal.ts";
 export { runOperation, reconcileOperation, finalizeOperation, abandonOperation } from "./operation.ts";
-export type { Operation, VerifiedTarget, OperatorPorts, OperationResult, FinalEvidence, PlanEvidence } from "./operation.ts";
+export type { Operation, OperationLimits, VerifiedTarget, OperatorPorts, OperationResult, FinalEvidence, PlanEvidence } from "./operation.ts";
 export { parseReadState, readStatePath } from "./contract.ts";
 export type { ReadState, Category } from "./contract.ts";
 export { replay } from "./replay.ts";
@@ -17,3 +17,5 @@ export type { BenchProfile } from "./bench.ts";
 export { SolanaRpcReader, RpcError } from "./rpc.ts";
 export type { RpcPort, ReadMethod } from "./rpc.ts";
 export type { Allowlist, RequestGuard } from "./client.ts";
+export { parseSpotSignal, prepareSpotSignalFromJournal } from "./signals.ts";
+export type { SpotSignal, SpotSignalPolicy, SpotSignalHoldings, SpotSignalPlan, SpotSignalLimits } from "./signals.ts";

@@ -217,6 +217,7 @@ test("capability inventory keeps networking in the explicit client, outside the 
     "./rpc.ts",
     "./bench.ts",
     "./reference.ts",
+    "./signals.ts",
   ]);
   for (const name of readdirSync(new URL("../src/", import.meta.url))) {
     const source = readFileSync(
@@ -235,6 +236,8 @@ test("capability inventory keeps networking in the explicit client, outside the 
   }
   const cli = readFileSync(new URL("../src/cli.ts", import.meta.url),"utf8");
   assert.deepEqual(inventoryImports(cli).filter(x=>x.startsWith("./")),["./replay.ts"]);
+  const signalCli = readFileSync(new URL("../src/signal-cli.ts", import.meta.url),"utf8");
+  assert.deepEqual(inventoryImports(signalCli),["./signals.ts"]);
 });
 test("three bundled scenarios are synthetic and deterministic", () => {
   for (const name of ["fresh", "stale", "unavailable"]) {

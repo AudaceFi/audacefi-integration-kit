@@ -1,10 +1,10 @@
 # Assurance and qualification
 
-The starter contains connection code for AI agents and trading bots, a narrow devnet reference adapter and deterministic local examples. Engineering reviews and tests are evidence within their stated scope; they do not certify a live deployment, provider, wallet, strategy performance or economic result.
+The kit contains connection code for AI agents and trading bots, a narrow devnet reference adapter, an offline signal adapter and deterministic local examples. Engineering reviews and tests are evidence within their stated scope; they do not certify a live deployment, provider, wallet, strategy performance or economic result.
 
 ## Locally qualified scope
 
-The reference toolchain is Node 24.22.1 and npm 11.19.1, locally qualified on Windows and Ubuntu under WSL using a native Linux temporary filesystem. Type checks, synthetic tests, build, content checks and text hygiene run without product access. The Linux run includes the real POSIX journal-directory permission test; the Windows suite explicitly skips that platform-specific test. This source revision has not been qualified in GitHub Actions. macOS, other Linux environments and real provider/wallet conformance remain unqualified.
+The reference toolchain is Node 24.22.1 and npm 11.19.1. Type checks, synthetic tests, build, content checks and text hygiene run without product access. Use a native Linux temporary filesystem for a full Ubuntu run under WSL, including the POSIX journal-directory permission test. The Windows suite skips that test and needs permission to create directory junctions for the filesystem hygiene tests. Record the platform and test results for the exact proposed revision.
 
 Tests exercise the client through injected transports and ephemeral local signing fixtures. The reference suite includes independent protocol, address and arithmetic vectors as well as failure, approval-expiry and ambiguous-finality cases. Builder/checker agreement alone is insufficient assurance. See [REFERENCE](REFERENCE.md) for the supported transaction forms, request bounds, supplied deployment pins and provider trust assumptions.
 
@@ -17,10 +17,10 @@ Before distributing a new revision or changing visibility or contribution access
 1. Run the documented controls on the exact proposed revision and obtain independent review from someone who wrote no implementation.
 2. Review source, fixtures, outputs, dependencies, license notices, Git history and hosting metadata for the complete proposed disclosure. Keep private audit evidence and operator data outside this repository.
 3. Reassess application access, workflow permissions, contributor permissions and the identity policy for GitHub-generated test objects. Existing development connections may process source and events independently of GitHub Actions.
-4. Verify attribution and support information, and prepare the confidential reporting route. Jordan ([@buchjordan](https://github.com/buchjordan)) is the accountable maintainer. The selected route is GitHub Private Vulnerability Reporting, which GitHub offers for public repositories only, so it cannot be verified before step 5. Prepare its activation and verification sequence in advance; right after an authorized visibility change, enable it, confirm that the repository setting reports it enabled, and verify it functionally with a controlled non-personal test account. Until then, SECURITY directs reporters to an existing private contact. See [SECURITY](../SECURITY.md) for reporting limits.
-5. Obtain the owner's explicit decision for public visibility. A reviewed source revision, default-branch change or passing test does not authorize merging, releasing a package, deploying or executing a real operation.
+4. Verify attribution and support information. Jordan ([@buchjordan](https://github.com/buchjordan)) is the accountable maintainer. The confidential reporting route for this public repository is GitHub Private Vulnerability Reporting. Verify that the repository setting is enabled and that the reporting form is available. See [SECURITY](../SECURITY.md) for reporting limits.
+5. Obtain the owner's explicit approval for the source revision before distributing it. Package publication, deployment and real execution each require separate approval.
 
-Audit conclusions apply only to their exact reviewed source revision, hosting state and stated scope. Private evidence stays outside this repository. Changes to source, access or hosting require reassessment; a passing check does not authorize public visibility or real execution.
+Audit conclusions apply only to their exact reviewed source revision, hosting state and stated scope. Private evidence stays outside this repository. Changes to source, access or hosting require reassessment.
 
 ## Real integration qualification
 

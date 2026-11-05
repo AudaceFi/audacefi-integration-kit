@@ -14,11 +14,12 @@ A TypeScript integration client for operators connecting an existing **AI agent*
 - A concrete reference adapter for the AudaceFi devnet bench: transaction construction, exact instruction/account verification, pinned deployment checks, balances, fees/rent, eligibility, external wallet callbacks and exact finalized transaction evidence. It supports BUY, SELL and token-to-token routes for both actor types.
 - A bounded, read-only Solana RPC client with a separately supplied endpoint and optional RPC credential. It never submits a transaction.
 - Original deterministic offline replay and synthetic scenarios, plus local-only connected lifecycle and failure tests.
+- [Off-chain signal adapter](docs/SIGNAL-PILOT.md) with a language-independent JSON Lines input, an offline CLI, and a Python example for a synthetic `long` then `flat` on one spot pair.
 - [Connection guide](docs/CONNECTING.md), [reference adapter](docs/REFERENCE.md), [operator guide](docs/OPERATORS.md), [wire contract](docs/CONTRACT.md), [OpenAPI](contract/openapi.json) and [support](docs/SUPPORT.md).
 
 ## Install and verify locally
 
-This is a public source repository. Clone it and use the reviewed `stable` branch. No GitHub repository invitation or AudaceFi API key is required to read or clone the source. AudaceFi onboarding and an individual API key are required before any real connection. Open a terminal at the repository root, containing `package.json`. Reference tools are Git, Node24.22.1 and npm11.19.1, locally qualified on Windows and Ubuntu under WSL using a native Linux temporary filesystem. Select those tools and verify `git --version`, `node --version` and `npm --version`. Node's official release is linked in the [offline guide](docs/OFFLINE.md).
+This is a public source repository. Clone it and use the reviewed `stable` branch. No GitHub repository invitation or AudaceFi API key is required to read or clone the source. AudaceFi onboarding and an individual API key are required before any real connection. Open a terminal at the repository root, containing `package.json`. The reference tools are Git, Node 24.22.1 and npm 11.19.1. Use a native Linux temporary filesystem when running the full suite in Ubuntu under WSL. Select those tools and verify `git --version`, `node --version` and `npm --version`. Node's official release is linked in the [offline guide](docs/OFFLINE.md).
 
 ```sh
 git clone --branch stable https://github.com/AudaceFi/audacefi-integration-kit.git
@@ -32,6 +33,17 @@ npm run demo:agent
 Installation contacts the package registry. Tests, demos and build perform no AudaceFi, model, exchange, wallet or RPC requests. The full check runs types, tests, build, content review and UTF-8/text hygiene. The last two commands remain synthetic replay examples: bot gives BUY, SELL, HOLD, HOLD; agent consumes authored JSON and gives BUY, BUY, HOLD, HOLD. Each permits two hypothetical proposals, then reports `PROPOSAL_BUDGET_EXHAUSTED`, `synthetic: true`, `executionAuthorized: false`. No funds are spent. The replay is not a model or a backtest.
 
 For negative cases, `npm run replay -- --scenario stale` and `npm run replay -- --scenario unavailable --strategy hold` return HOLD only. For the callable connected flow, start with [CONNECTING](docs/CONNECTING.md); running the quickstart never starts it.
+
+## Preview signals from an off-chain bot
+
+After installing dependencies, build the kit and pipe the Python example into the local preview.
+
+```sh
+npm run build
+python examples/signal-pilot.py | npm run --silent signal:preview
+```
+
+The preview runs offline on one synthetic spot pair. It accepts JSON Lines from any language and demonstrates entering a position with `long` and closing it with `flat`. It requires no AudaceFi account, API key or wallet. The [signal adapter guide](docs/SIGNAL-PILOT.md) defines the input format and how to supply your own signal.
 
 ## Integrate either operator
 

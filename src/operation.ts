@@ -63,7 +63,7 @@ function validateOperation(o: Operation): Operation {
   if (!/^[0-9]+(?:[.][0-9]+)?$/.test(s) || (parts[1]?.length ?? 0) > decimals || o.amountIn <= 0 || o.amountIn > 1e12 || BigInt(parts[0]! + (parts[1] ?? "").padEnd(decimals,"0")) !== BigInt(o.amountInRaw) || o.tokenInMint === o.tokenOutMint) throw new Error("AMOUNT_UNIT_MISMATCH");
   return structuredClone(o);
 }
-function validateTarget(t: VerifiedTarget, o: Operation): VerifiedTarget {
+function validateTarget(t: VerifiedTarget, o: Operation, outputDecimals: number | undefined): VerifiedTarget {
   if (t.network !== "devnet" || t.durableProtocol !== "audacefi.bench.submission.v1" || !/^[1-9A-HJ-NP-Za-km-z]{32,64}$/.test(t.expectedGenesis) || t.expectedGenesis !== t.observedGenesis) throw new Error("UNVERIFIED_TARGET");
   mint(t.usdcMainnet);
   if (t.allowedPrograms.length < 1 || t.allowedPrograms.length > 8 || t.mappings.length < 2 || t.mappings.length > 64) throw new Error("INVALID_TARGET");
@@ -72,6 +72,7 @@ function validateTarget(t: VerifiedTarget, o: Operation): VerifiedTarget {
   if (new Set(t.mappings.map(m=>m.mainnet)).size !== t.mappings.length || new Set(t.mappings.map(m=>m.devnet)).size !== t.mappings.length) throw new Error("DUPLICATE_MAPPING");
   const input=t.mappings.find(m=>m.mainnet===o.tokenInMint), output=t.mappings.find(m=>m.mainnet===o.tokenOutMint);
   if (!input || !output || input.decimals!==o.inputDecimals) throw new Error("MAPPING_REQUIRED");
+  if (outputDecimals!==undefined && output.decimals!==outputDecimals) throw new Error("OUTPUT_DECIMALS_MISMATCH");
   return structuredClone(t);
 }
 function validateQuote(q: Quote,o: Operation,t: VerifiedTarget,now: number): void {
@@ -84,24 +85,46 @@ function validateQuote(q: Quote,o: Operation,t: VerifiedTarget,now: number): voi
     if (buy===sell || q.direction!==(buy?"buy":"sell") || q.mintMainnet!==token || q.mintDevnet!==t.mappings.find(m=>m.mainnet===token)?.devnet) throw new Error("QUOTE_MAPPING_MISMATCH");
   }
 }
-/** One explicit operation, no scheduler/retries, shared by both actor types. */
-export async function runOperation(client: AudaceFiClient,journal: FileJournal,input: Operation,ports: OperatorPorts,clock:()=>number=Date.now): Promise<OperationResult> {
+/**
+ * `notAfterMs`, such as a signal's expiry, binds until the SIGNED write begins under the journal lock.
+ * Once that write begins, the transaction follows the normal submission and reconciliation rules.
+ * `outputDecimals`, when set, must equal the verified mapping's decimals for the token received; checked before any reservation.
+ * `journalVersion`, when set, is a `capacity()` snapshot's `version`; the reservation is refused on another journal or once it changed.
+ */
+export interface OperationLimits { notAfterMs?: number | undefined; outputDecimals?: number | undefined; journalVersion?: string | undefined }
+/** One explicit operation, no scheduler/retries, shared by both actor types. A FileJournal counts it from its first step. */
+export async function runOperation(client: AudaceFiClient,journal: FileJournal,input: Operation,ports: OperatorPorts,clock:()=>number=Date.now,limits:OperationLimits={}): Promise<OperationResult> {
+  const task=()=>runTracked(client,journal,input,ports,clock,limits);
+  return journal instanceof FileJournal?journal.trackRun(task):task();
+}
+async function runTracked(client: AudaceFiClient,journal: FileJournal,input: Operation,ports: OperatorPorts,clock:()=>number,limits:OperationLimits): Promise<OperationResult> {
   const o=freeze(validateOperation(input));
+  const bounds=closed(limits,["notAfterMs","outputDecimals","journalVersion"]);
+  const notAfter=bounds.notAfterMs===undefined?undefined:integer(bounds.notAfterMs,1,8000000000000);
+  const outputDecimals=bounds.outputDecimals===undefined?undefined:integer(bounds.outputDecimals,0,9);
+  const journalVersion=bounds.journalVersion;
+  if(journalVersion!==undefined && (typeof journalVersion!=="string" || !/^[0-9a-f]{64}$/.test(journalVersion)))throw new Error("INVALID_JOURNAL_VERSION");
+  // An older JavaScript journal adapter can ignore extra arguments. Require the implementation that enforces them.
+  if((notAfter!==undefined || journalVersion!==undefined) && !(journal instanceof FileJournal))throw new Error("JOURNAL_LIMITS_UNSUPPORTED");
   // A read-only client could only fail at the first write: refuse before reading or reserving anything.
   if(!client.writesAuthorized)throw new Error("WRITES_NOT_AUTHORIZED");
   const state=await client.readState(o.category,"real"), now=clock(), s=state.season.active,w=state.wallet;
   if (!s || s.id!==o.seasonId || s.status!=="active" || s.executionMode!=="devnet_onchain" || s.startsAt===null || s.endsAt===null || timestamp(s.startsAt)>now || timestamp(s.endsAt)<=now || timestamp(state.asOf)>now+30000 || now-timestamp(state.asOf)>120000 || w.state!=="ok" || w.walletAddress!==o.playerPublicKey || w.seasonId!==s.id || w.seasonExecutionMode!=="devnet_onchain" || w.mode!=="real" || w.category!==o.category.replace("-","_")) throw new Error("STATE_NOT_EXECUTABLE");
-  const target=freeze(validateTarget(await ports.verifyTarget(),o));
-  let last=now;
+  const target=freeze(validateTarget(await ports.verifyTarget(),o,outputDecimals));
+  let last=now,signatureJournaled=false,deadlineReached=false;
   function current():number {
     const at=integer(clock(),0,8000000000000);
     if(at<last)throw new Error("CLOCK_REGRESSION");last=at;
     if(!s || s.endsAt===null || at>=timestamp(s.endsAt) || at-timestamp(state.asOf)>120000)throw new Error("EVIDENCE_EXPIRED");
+    // Recorded here because the client reports a refusal inside its pre-send guard as GUARD_REFUSED_BEFORE_SEND.
+    if(notAfter!==undefined && !signatureJournaled && at>=notAfter){deadlineReached=true;throw new Error("OPERATION_DEADLINE_PASSED");}
     return at;
   }
   current();
   const commitment=digest({origin:client.origin,operation:o,target});
-  await journal.reserve(o.operationKey,commitment,o.tokenInMint,o.amountInRaw,client.origin);
+  const reservation=[o.operationKey,commitment,o.tokenInMint,o.amountInRaw,client.origin] as const;
+  if(journalVersion===undefined)await journal.reserve(...reservation);
+  else await journal.reserve(...reservation,journalVersion);
   let intentId:string|null=null;
   try {
     const targetGuard=async()=>{current();await ports.assertTargetCurrent?.();current();};
@@ -136,7 +159,10 @@ export async function runOperation(client: AudaceFiClient,journal: FileJournal,i
     if (checked.messageHash!==plan.messageHash) throw new Error("MESSAGE_CHANGED_AFTER_SIGNING");
     assertSignatureEncoding(signed.signature,checked.playerSignatureBytes);
     await freshGuard();
-    await journal.append(o.operationKey,{stage:"SIGNED",intentId,quoteId:q.quoteId,...(quoteOutId?{quoteOutId}:{}),messageHash:checked.messageHash,transactionHash:checked.transactionHash,playerPublicKey:o.playerPublicKey,playerSignature:signed.signature,genesisHash:target.expectedGenesis});
+    const signedEvent:JournalEvent={stage:"SIGNED",intentId,quoteId:q.quoteId,...(quoteOutId?{quoteOutId}:{}),messageHash:checked.messageHash,transactionHash:checked.transactionHash,playerPublicKey:o.playerPublicKey,playerSignature:signed.signature,genesisHash:target.expectedGenesis};
+    if(notAfter===undefined)await journal.append(o.operationKey,signedEvent);
+    else await journal.append(o.operationKey,signedEvent,current);
+    signatureJournaled=true;
     await client.recordSignature(intentId,signed.signature,freshGuard);
     guard();
     await journal.append(o.operationKey,{stage:"SENDING",intentId});
@@ -145,15 +171,16 @@ export async function runOperation(client: AudaceFiClient,journal: FileJournal,i
     await journal.append(o.operationKey,{stage:saved.state==="UNKNOWN"?"AMBIGUOUS":saved.state,intentId,txid:saved.txid});
     return {state:saved.state,intentId,txid:saved.txid};
   } catch (error) {
+    const reason=deadlineReached?"OPERATION_DEADLINE_PASSED":failureCode(error);
     // The client reports a write as non-ambiguous only if its transport was never called: a create-intent
     // refused that way left no server state, so the operation is closed. Everything else stays ambiguous.
     if(intentId===null && error instanceof ClientError && !error.ambiguous) {
       await journal.append(o.operationKey,{stage:"UNSENT"});
-      return {state:"UNSENT",intentId,txid:null,reason:failureCode(error)};
+      return {state:"UNSENT",intentId,txid:null,reason};
     }
     // Even an abort or malformed write response cannot authorize a replacement.
     await journal.append(o.operationKey,{stage:"AMBIGUOUS",...(intentId?{intentId}:{})});
-    return {state:"AMBIGUOUS",intentId,txid:null,reason:failureCode(error)};
+    return {state:"AMBIGUOUS",intentId,txid:null,reason};
   }
 }
 /** Local closure of an intention the server reported as new and this journal never signed: no journal can hold a signed transaction for it. Refused after SIGNED, after a replay or without a journaled INTENT. The reservation stays counted. */
