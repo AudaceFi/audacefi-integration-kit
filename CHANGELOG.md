@@ -1,8 +1,18 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
-Season 1 off-chain signal pilot, qualified for local preview only.
+Season 1 spot signal adapter for external bots and agents.
+
+- Add a Python and JSON Lines entry point for a dedicated ranked Crypto Bro validation deployment. The gateway requires a reviewed 20 bps spot program, a frozen allowlist, exact finalized fills and transaction-level leaderboard evidence.
+- Persist signal IDs and sequence numbers across restarts. Reconcile a pending signal against its original submission and stop on an uncertain final-result write.
+- Add an authenticated loopback HTTP receiver, a standard-library Python client and an account-scoped reader for exact ranked evidence on a qualified deployment.
+- Add Python examples for translating explicitly mapped Alpaca, MetaTrader 5 and cTrader strategy positions into validation signals.
+- Add an explicit official target option for the ranked CLI and loopback HTTP receiver. It checks the AudaceFi deployment profile, issuer trust information and signed approval, including current approval status before writes. Live activation awaits the separately qualified release package and issuance channel.
+- Add the supervised `--recover-exit` command for a verified open position, subject to the configured recovery floor, remaining exit capacity and current approvals.
+- Check that an account-scoped ranked receipt refers to the same finalized intent and transaction. AudaceFi reports the provisional rank and valuation time.
+- Translate exact source instrument IDs from strategies such as futures, options and prediction markets into operator-approved spot signals using the Python client.
+- Bind saved Python runs to the gateway and journal so a target change cannot replay old signal bytes into a different scope.
 
 - Add `parseSpotSignal`, `prepareSpotSignalFromJournal`, the offline `signal:preview` CLI and a Python example for an unranked synthetic `long` then `flat` round trip.
 - `prepareSpotSignalFromJournal` keeps copies of the signal and policy and invalidates earlier unreserved plans before its first journal snapshot, once the signal passes the relevance checks. A failed snapshot leaves older plans invalid. The helper checks for an unresolved operation or a run in progress before reading holdings and compares snapshots on both sides of that read. Plans expire across a module restart.

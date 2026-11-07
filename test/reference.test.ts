@@ -29,6 +29,73 @@ for (const actor of ["ai_agent", "trading_bot"] as const) for (const kind of ["b
   });
 }
 
+for (const kind of ["buy", "sell", "route"] as const) {
+  test(`official ${kind} verifies exact finalized amounts after recreating the reference adapter`, async t => {
+    const h = referenceHarness(kind, "trading_bot", "official");
+    const { journal } = await journalFor(t, { maxOperations: 2, inputBudgets: { [h.operation.tokenInMint]: "2000000" } });
+    assert.equal((await runOperation(h.client, journal, h.operation, h.suite.ports, h.getNow)).state, "SUBMITTED");
+    const restored = createReferenceAdapters({ profile: h.profile, client: h.client, rpc: h.rpc, wallet: h.wallet, clock: h.getNow });
+    assert.equal(await finalizeOperation(h.client, journal, h.operation.operationKey, restored.verifyFinal), "confirmed");
+    assert.equal(h.calls.filter(call => call.path.endsWith("/result")).length, 1);
+  });
+}
+
+test("official finality stays unknown on invalid deltas, token rows or a coherent 10 bps fill", async t => {
+  const h = referenceHarness("buy", "ai_agent", "official"), { journal } = await journalFor(t);
+  assert.equal((await runOperation(h.client, journal, h.operation, h.suite.ports, h.getNow)).state, "SUBMITTED");
+  type Meta = Parameters<typeof h.controls.finalTokenMeta>[0];
+  const mutations: Array<(meta: Meta) => Partial<Meta>> = [
+    () => ({}),
+    meta => ({ ...meta, postTokenBalances: meta.postTokenBalances.slice(0, -1) }),
+    meta => ({ ...meta, preTokenBalances: [...meta.preTokenBalances, meta.preTokenBalances[0]!] }),
+    meta => { meta.postTokenBalances[0]!.uiTokenAmount.amount = "1e10"; return meta; },
+    meta => { meta.postTokenBalances[0]!.uiTokenAmount.decimals--; return meta; },
+    meta => { meta.postTokenBalances[1]!.owner = asset(84); return meta; },
+    meta => { meta.postTokenBalances[2]!.programId = SYSTEM_PROGRAM; return meta; },
+    meta => { meta.postTokenBalances[3]!.mint = asset(84); return meta; },
+    meta => {
+      // 10 bps on 1 USDC at a price of 2 gives 500 more asset raw units.
+      const corrections = [0n, 500n, 1000n, -500n, -1000n];
+      meta.postTokenBalances.forEach((row, index) => {
+        row.uiTokenAmount.amount = (BigInt(row.uiTokenAmount.amount) + corrections[index]!).toString();
+      });
+      return meta;
+    },
+  ];
+  for (const mutate of mutations) {
+    h.controls.finalTokenMeta = mutate;
+    assert.equal(await finalizeOperation(h.client, journal, h.operation.operationKey, h.suite.verifyFinal), "unknown");
+  }
+  assert.equal(h.calls.some(call => call.path.endsWith("/result")), false);
+  h.controls.finalTokenMeta = meta => meta;
+  assert.equal(await finalizeOperation(h.client, journal, h.operation.operationKey, h.suite.verifyFinal), "confirmed");
+});
+
+test("official finality admits a new output ATA and a correctly rounded zero fee", async t => {
+  const h = referenceHarness("buy", "trading_bot", "official"), { journal } = await journalFor(t);
+  Object.assign(h.operation, { amountIn: 0.000499, amountInRaw: "499" });
+  h.quoteWire.amountInRaw = "499";
+  assert.equal((await runOperation(h.client, journal, h.operation, h.suite.ports, h.getNow)).state, "SUBMITTED");
+  let verifyCreation = false;
+  h.controls.finalTokenMeta = meta => {
+    const pre = meta.preTokenBalances.splice(1, 1)[0]!;
+    const post = meta.postTokenBalances[1]!;
+    post.uiTokenAmount.amount = (BigInt(post.uiTokenAmount.amount) - BigInt(pre.uiTokenAmount.amount)).toString();
+    if (verifyCreation) meta.preBalances[pre.accountIndex] = 0;
+    return meta;
+  };
+  assert.equal(await finalizeOperation(h.client, journal, h.operation.operationKey, h.suite.verifyFinal), "unknown");
+  verifyCreation = true;
+  assert.equal(await finalizeOperation(h.client, journal, h.operation.operationKey, h.suite.verifyFinal), "confirmed");
+});
+
+test("an exact officially failed transaction needs no token deltas", async t => {
+  const h = referenceHarness("buy", "trading_bot", "official"), { journal } = await journalFor(t);
+  assert.equal((await runOperation(h.client, journal, h.operation, h.suite.ports, h.getNow)).state, "SUBMITTED");
+  h.controls.finalError = { InstructionError: [2, { Custom: 6000 }] };
+  assert.equal(await finalizeOperation(h.client, journal, h.operation.operationKey, h.suite.verifyFinal), "failed");
+});
+
 test("reference creation is inert and freezes caller-owned deployment configuration", async t => {
   const h = referenceHarness(); assert.equal(h.counts().rpc, 0); assert.equal(h.counts().api, 0); assert.equal(h.counts().keyCalls, 0);
   h.profile.mappings[0]!.decimals = 3;

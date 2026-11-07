@@ -5,7 +5,10 @@ import { associatedAddress, ASSOCIATED_TOKEN_PROGRAM, decode58, derivePda, discr
 
 export interface BenchProfile {
   apiOrigin: string; expectedGenesis: string; programId: string; programData: string; programDataSha256: string;
+  apiBasePath?: "/api";
   admin: string; poster: string; freshnessSeconds: number; usdcMainnet: string;
+  /** Match the single-swap fee to the independently reviewed program data pin. */
+  singleSwapFeeBps?: 10 | 20;
   mappings: { mainnet: string; devnet: string; decimals: number }[];
   /** Operator attestation from a separately qualified API deployment, not a probe performed by this library. */
   apiApproval: { protocol: "audacefi.bench.submission.v1"; validFromMs: number; expiresAtMs: number };
@@ -14,18 +17,20 @@ const MAX64 = (1n << 64n) - 1n, MAX128 = (1n << 128n) - 1n;
 function bounded(n: bigint, max: bigint, positive = false): bigint { if (n < (positive ? 1n : 0n) || n > max) throw new Error("BENCH_INTEGER_RANGE"); return n; }
 function mul(a: bigint, b: bigint): bigint { return bounded(a * b, MAX128); }
 function pow10(n: number): bigint { integer(n, 0, 38); return bounded(10n ** BigInt(n), MAX128); }
-export function benchAmounts(amount: string, inputDecimals: number, outputDecimals: number, price: string, expo: number, kind: "buy" | "sell" | "route", outputPrice?: string, outputExpo?: number) {
+export function benchAmounts(amount: string, inputDecimals: number, outputDecimals: number, price: string, expo: number, kind: "buy" | "sell" | "route", outputPrice?: string, outputExpo?: number, singleSwapFeeBps: 10 | 20 = 10) {
+  if (singleSwapFeeBps !== 10 && singleSwapFeeBps !== 20) throw new Error("INVALID_SINGLE_SWAP_FEE");
+  const singleFee = BigInt(singleSwapFeeBps);
   const input = BigInt(rawAmount(amount)), p = BigInt(rawAmount(price));
   const di = integer(inputDecimals, 0, 9), dout = integer(outputDecimals, 0, 9), e = integer(expo, -18, 18);
   let gross: bigint, fee: bigint, output: bigint;
   if (kind === "buy") {
-    fee = mul(input, 10n) / 10000n;
+    fee = mul(input, singleFee) / 10000n;
     const net = input - fee;
     gross = e >= 0 ? mul(net, pow10(dout)) / mul(p, pow10(di + e)) : mul(net, pow10(dout - e)) / mul(p, pow10(di));
     output = gross;
   } else if (kind === "sell") {
     gross = e >= 0 ? mul(mul(input, p), pow10(dout + e)) / pow10(di) : mul(mul(input, p), pow10(dout)) / pow10(di - e);
-    fee = mul(gross, 10n) / 10000n; output = gross - fee;
+    fee = mul(gross, singleFee) / 10000n; output = gross - fee;
   } else {
     const po = BigInt(rawAmount(outputPrice)), eo = integer(outputExpo, -18, 18), k = dout - di + e - eo;
     let numerator = mul(input, p), denominator = po;
@@ -64,7 +69,7 @@ export function benchPlan(profile: BenchProfile, o: Readonly<Operation>, q: Read
   } else {
     const buy = input.mainnet === profile.usdcMainnet, token = buy ? output : input;
     if (buy === (output.mainnet === profile.usdcMainnet) || q.direction !== (buy ? "buy" : "sell") || q.mintMainnet !== token.mainnet || q.mintDevnet !== token.devnet) throw new Error("BENCH_SINGLE_MISMATCH");
-    amounts = benchAmounts(o.amountInRaw, input.decimals, output.decimals, q.price, q.expo, buy ? "buy" : "sell");
+    amounts = benchAmounts(o.amountInRaw, input.decimals, output.decimals, q.price, q.expo, buy ? "buy" : "sell", undefined, undefined, profile.singleSwapFeeBps);
     prices.push({ mint: token.devnet, price: q.price, expo: q.expo });
     swapAccounts = [meta(a.config.address), meta(token.devnet), meta(usdc.devnet), meta(a.price(token.devnet).address), meta(a.vault.address), meta(associatedAddress(a.vault.address, token.devnet), true), meta(associatedAddress(a.vault.address, usdc.devnet), true), meta(a.fee.address), meta(feeVault, true), meta(o.playerPublicKey, true, true), meta(associatedAddress(o.playerPublicKey, token.devnet), true), meta(associatedAddress(o.playerPublicKey, usdc.devnet), true), meta(TOKEN_PROGRAM)];
     swapData = Buffer.concat([discriminator("global", "swap"), Buffer.from([buy ? 0 : 1]), amount]);

@@ -1,6 +1,6 @@
 {
   "name": "audacefi-integration-kit",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -15,6 +15,8 @@
     "demo:agent": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js replay --strategy model-fixture",
     "replay": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/cli.js replay",
     "signal:preview": "node --permission --allow-fs-read=. --import ./scripts/offline-guard.mjs dist/signal-cli.js",
+    "signal:live": "node dist/ranked-signal-cli.js",
+    "signal:http": "node scripts/signal-http.mjs",
     "audit:content": "node scripts/audit-content.mjs",
     "check": "npm run typecheck && npm test && npm run build && npm run audit:content && npm run format:check",
     "prepublishOnly": "node -e \"throw new Error('Package publication requires a separate owner decision')\"",

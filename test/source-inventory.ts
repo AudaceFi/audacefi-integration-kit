@@ -1,6 +1,6 @@
 import ts from "typescript";
 // Analyze every static import form, including side-effect imports and re-exports.
-export function inventoryImports(source: string): string[] {
+export function inventoryImports(source: string, allowRankedOperator = false): string[] {
   const file = ts.createSourceFile(
       "inventory.ts",
       source,
@@ -21,7 +21,9 @@ export function inventoryImports(source: string): string[] {
       throw new Error("IMPORT_EQUALS_FORBIDDEN");
     if (
       ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      !(allowRankedOperator && node.arguments.length === 1 &&
+        node.arguments[0]?.getText(file) === "pathToFileURL(operator).href")
     )
       throw new Error("DYNAMIC_IMPORT_FORBIDDEN");
     ts.forEachChild(node, visit);

@@ -1,19 +1,77 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import assert from "node:assert/strict";
 import { AudaceFiClient, type FetchPort } from "../src/client.ts";
+import { SOLANA_DEVNET_GENESIS } from "../src/contract.ts";
 import { createReferenceAdapters } from "../src/reference.ts";
 import { SolanaRpcReader } from "../src/rpc.ts";
 import type { BenchProfile } from "../src/bench.ts";
-import { benchAddresses } from "../src/bench.ts";
+import { benchAddresses, benchAmounts } from "../src/bench.ts";
 import { associatedAddress, ASSOCIATED_TOKEN_PROGRAM, CLOCK_SYSVAR, decode58, decodeLegacy, discriminator, encode58, hashBytes, SYSTEM_PROGRAM, SYSVAR_OWNER, TOKEN_PROGRAM, UPGRADEABLE_LOADER } from "../src/solana.ts";
 import { asset, clock, harness, syntheticId } from "./connected-harness.ts";
 
 export type ReferenceKind = "buy" | "sell" | "route";
-export function referenceHarness(kind: ReferenceKind = "buy", actor: "ai_agent" | "trading_bot" = "trading_bot") {
+interface TokenRow {
+  accountIndex: number;
+  mint: string;
+  owner: string;
+  programId: string;
+  uiTokenAmount: { amount: string; decimals: number };
+}
+interface FinalTokenMeta {
+  preTokenBalances: TokenRow[];
+  postTokenBalances: TokenRow[];
+  preBalances: number[];
+  postBalances: number[];
+}
+
+function finalTokenMeta(encoded: string, profile: BenchProfile, player: string): FinalTokenMeta {
+  const tx = decodeLegacy(encoded);
+  const swap = tx.instructions.at(-1)!;
+  const data = Buffer.from(swap.data);
+  const route = data.length === 16;
+  const buy = !route && data[8] === 0;
+  const raw = data.readBigUInt64LE(route ? 8 : 9);
+  const mapping = (mint: string) => profile.mappings.find(candidate => candidate.devnet === mint)!;
+  const token = mapping(swap.accounts[1]!.address);
+  const usdc = profile.mappings.find(candidate => candidate.mainnet === profile.usdcMainnet)!;
+  const input = buy ? usdc : token;
+  const output = route ? mapping(swap.accounts[2]!.address) : buy ? token : usdc;
+  const price = Buffer.from(tx.instructions[1]!.data);
+  const secondary = route ? Buffer.from(tx.instructions[2]!.data) : undefined;
+  const result = benchAmounts(raw.toString(), input.decimals, output.decimals, price.readBigUInt64LE(8).toString(),
+    price.readInt32LE(16), route ? "route" : buy ? "buy" : "sell", secondary?.readBigUInt64LE(8).toString(),
+    secondary?.readInt32LE(16), 20);
+  const { vault, fee } = benchAddresses(profile);
+  const makeRow = (mint: typeof token, owner: string, delta: bigint) => {
+    const address = associatedAddress(owner, mint.devnet);
+    const accountIndex = tx.accounts.findIndex(account => account.address === address);
+    assert.notEqual(accountIndex, -1);
+    const base = 100_000_000_000n;
+    const fields = { accountIndex, mint: mint.devnet, owner, programId: TOKEN_PROGRAM };
+    return {
+      pre: { ...fields, uiTokenAmount: { amount: base.toString(), decimals: mint.decimals } },
+      post: { ...fields, uiTokenAmount: { amount: (base + delta).toString(), decimals: mint.decimals } },
+    };
+  };
+  const pairs = [
+    makeRow(input, player, -raw), makeRow(output, player, result.output),
+    makeRow(input, vault.address, buy ? raw - result.fee : raw), makeRow(output, vault.address, -result.vaultRequired),
+    makeRow(route ? output : usdc, fee.address, result.fee),
+  ];
+  return {
+    preTokenBalances: pairs.map(row => row.pre), postTokenBalances: pairs.map(row => row.post),
+    preBalances: tx.accounts.map(() => 2_000_000), postBalances: tx.accounts.map(() => 2_000_000),
+  };
+}
+
+export function referenceHarness(
+  kind: ReferenceKind = "buy", actor: "ai_agent" | "trading_bot" = "trading_bot", mode: "root" | "official" = "root",
+) {
   const old = harness(actor), poster = generateKeyPairSync("ed25519");
   const posterKey = encode58(Buffer.from(poster.publicKey.export({ type: "spki", format: "der" })).subarray(-32));
   const programData = Buffer.alloc(85); programData.writeUInt32LE(3); programData.writeBigUInt64LE(1n, 4); programData[12] = 1; decode58(asset(90), 32).copy(programData, 13); Buffer.from("synthetic-code-only").copy(programData, 45);
   const profile: BenchProfile = { apiOrigin: old.client.origin, expectedGenesis: asset(8), programId: asset(7), programData: asset(89), programDataSha256: hashBytes(programData), admin: asset(90), poster: posterKey, freshnessSeconds: 900, usdcMainnet: asset(1), mappings: [{ mainnet: asset(1), devnet: asset(3), decimals: 6 }, { mainnet: asset(2), devnet: asset(4), decimals: 6 }, { mainnet: asset(5), devnet: asset(6), decimals: 9 }], apiApproval: { protocol: "audacefi.bench.submission.v1", validFromMs: clock - 60000, expiresAtMs: clock + 600000 } };
+  if (mode === "official") Object.assign(profile, { apiBasePath: "/api", expectedGenesis: SOLANA_DEVNET_GENESIS, singleSwapFeeBps: 20 });
   old.target.allowedPrograms = [profile.programId, ASSOCIATED_TOKEN_PROGRAM];
   const o = old.operation;
   if (kind !== "buy") { o.tokenInMint = asset(2); o.tokenOutMint = kind === "sell" ? asset(1) : asset(5); }
@@ -35,17 +93,29 @@ export function referenceHarness(kind: ReferenceKind = "buy", actor: "ai_agent" 
   }
   let time = clock, blockHeight = 500, signed = false, walletCalls = 0, keyCalls = 0, credentialCalls = 0;
   const rpcCalls: { method: string; params: any[] }[] = [];
-  const controls = { rpcGenesis: profile.expectedGenesis, rpcSlot: 500, blockhashValid: true, finalStatus: "finalized", finalError: null as any, finalMissing: false, walletKey: o.playerPublicKey, mutateMessage: false, expireAfterKey: false, expireCredentialAfterSign: false, expireApprovalAtCredential: 0, revokeAfterSign: false, expireBlockhashAfterSign: false, loseFundsAfterSign: false };
+  const controls = { rpcGenesis: profile.expectedGenesis, rpcSlot: 500, blockhashValid: true, finalStatus: "finalized", finalError: null as any, finalMissing: false, finalTokenMeta: (meta: FinalTokenMeta): Partial<FinalTokenMeta> => meta, walletKey: o.playerPublicKey, mutateMessage: false, expireAfterKey: false, expireCredentialAfterSign: false, expireApprovalAtCredential: 0, revokeAfterSign: false, expireBlockhashAfterSign: false, loseFundsAfterSign: false };
   const allowlist: any = { seasonId: o.seasonId, category: "crypto_bro", allowlistFrozen: true, tokens: profile.mappings.map(m => ({ mint: m.mainnet, decimals: m.decimals, exempt: m.mainnet === profile.usdcMainnet, eligible: m.mainnet !== profile.usdcMainnet })) };
   const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+  const accountId = syntheticId(20);
+  const accessToken = mode === "official" ? "afk_synthetic_fixture" : "synthetic-api-credential";
   const apiTransport: FetchPort = async (url, init) => {
-    assert.equal((init.headers as any).Authorization, "Bearer synthetic-api-credential");
+    assert.equal((init.headers as any).Authorization, `Bearer ${accessToken}`);
     const target = new URL(url);
+    if (mode === "official") {
+      assert.ok(target.pathname.startsWith("/api/v1/"));
+      target.pathname = target.pathname.slice(4);
+      if (target.pathname === "/v1/me") return json({ account: {
+        id: accountId, participantType: actor, status: "active", participantTypeDeclaredAt: new Date(clock).toISOString(),
+      }, onboardingComplete: true, credentialScopes: ["read", "execute"] });
+    }
     if (target.pathname.endsWith("/allowlist")) { old.calls.push({ path: target.pathname, method: "GET", body: null }); assert.equal(target.searchParams.get("category"), "crypto_bro"); assert.equal(target.searchParams.get("mode"), "real"); return json(allowlist); }
     if (target.pathname.endsWith("/quote")) { old.calls.push({ path: target.pathname, method: init.method!, body: JSON.parse(String(init.body)) }); return json(quoteWire); }
-    return old.transport(url, init);
+    return old.transport(target.toString(), init);
   };
-  const client = new AudaceFiClient({ origin: profile.apiOrigin, credential: () => { credentialCalls++; if (signed && controls.expireCredentialAfterSign) time += 62000; if (credentialCalls === controls.expireApprovalAtCredential) time = profile.apiApproval.expiresAtMs; return "synthetic-api-credential"; }, writes: "explicitly-authorized", transport: apiTransport });
+  const credential = () => { credentialCalls++; if (signed && controls.expireCredentialAfterSign) time += 62000; if (credentialCalls === controls.expireApprovalAtCredential) time = profile.apiApproval.expiresAtMs; return accessToken; };
+  const api = { origin: profile.apiOrigin, credential, transport: apiTransport };
+  const client = mode === "official" ? AudaceFiClient.forOfficialRankedProxy({ ...api, accountId, actor, authorizeWrite: () => {} }) :
+    new AudaceFiClient({ ...api, writes: "explicitly-authorized" });
   const rawRpc = async (method: string, params: any[]) => {
     rpcCalls.push({ method, params: structuredClone(params) });
     const ctx = (value: unknown) => ({ context: { slot: controls.rpcSlot }, value });
@@ -65,7 +135,8 @@ export function referenceHarness(kind: ReferenceKind = "buy", actor: "ai_agent" 
       const submitted = old.calls.find(c => c.path.endsWith("/submit-durable") && encode58(decodeLegacy(c.body.transaction).signatures[0]!) === params[0])?.body.transaction;
       if (!submitted) return null;
       const bytes = Buffer.from(submitted, "base64"); sign(null, bytes.subarray(129), poster.privateKey).copy(bytes, 65);
-      return { slot: controls.rpcSlot, version: "legacy", transaction: [bytes.toString("base64"), "base64"], meta: { err: controls.finalError } };
+      const meta = controls.finalError === null ? controls.finalTokenMeta(finalTokenMeta(submitted, profile, o.playerPublicKey)) : {};
+      return { slot: controls.rpcSlot, version: "legacy", transaction: [bytes.toString("base64"), "base64"], meta: { ...meta, err: controls.finalError } };
     }
     throw new Error("UNEXPECTED_SYNTHETIC_RPC_METHOD");
   };

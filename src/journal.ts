@@ -3,7 +3,8 @@ import { lstat, mkdir, open, readFile, readdir, realpath, unlink } from "node:fs
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { digest } from "./canonical.ts";
 import { closed, integer, record } from "./contract.ts";
-import { mint, rawAmount, uuid } from "./client.ts";
+import { mint, rawAmount, uuid, type OfficialProxyIdentity } from "./client.ts";
+import type { Operation, SignedRecovery } from "./operation.ts";
 
 export interface JournalPolicy { maxOperations: number; inputBudgets: Record<string, string> }
 /** What new reservations could still use when the snapshot was taken. Raw amounts; reservations are never released. */
@@ -19,11 +20,11 @@ export interface JournalCapacity {
   /** Digest of the journal directory, its policy, `reservedOperations` and a random plan marker (`claimPlanVersion`): `reserve()` can refuse once it changed. */
   version: string;
 }
-export interface OperationRecord {
-  version: 1; keyHash: string; payloadHash: string; tokenInMint: string; amountInRaw: string; origin: string;
-}
+export type OperationRecord = {
+  keyHash: string; payloadHash: string; tokenInMint: string; amountInRaw: string; origin: string;
+} & ({ version: 1; apiBasePath?: never } | ({ version: 2; apiBasePath: "/api" } & OfficialProxyIdentity));
 export interface JournalEvent {
-  stage: "INTENT" | "QUOTED" | "SIGNED" | "SENDING" | "AMBIGUOUS" | "RECORDED" | "SUBMITTED" | "FINAL_CONFIRMED" | "FINAL_FAILED" | "ABANDONED" | "UNSENT";
+  stage: "INTENT" | "QUOTED" | "SIGNED" | "SIGNATURE_POSTING" | "SENDING" | "SEND_REFUSED" | "AMBIGUOUS" | "RECORDED" | "SUBMITTED" | "FINAL_CONFIRMED" | "FINAL_FAILED" | "ABANDONED" | "UNSENT" | "EXPIRED_UNSENT";
   intentId?: string;
   quoteId?: string;
   quoteOutId?: string;
@@ -34,38 +35,42 @@ export interface JournalEvent {
   txid?: string;
   genesisHash?: string;
   replayed?: boolean;
+  exactInputBound?: true;
 }
-const eventKeys=["stage","intentId","quoteId","quoteOutId","messageHash","playerSignature","playerPublicKey","transactionHash","txid","genesisHash","replayed"];
-function validateEvents(values:unknown[]):JournalEvent[] {
+const eventKeys=["stage","intentId","quoteId","quoteOutId","messageHash","playerSignature","playerPublicKey","transactionHash","txid","genesisHash","replayed","exactInputBound"];
+const maxEvents = 16;
+const maxRankedEvents = 64;
+function validateEvents(values:unknown[], recoverable: boolean):JournalEvent[] {
   const result:JournalEvent[]=[];
-  let intent:string|undefined,quote:string|undefined,quoteOut:string|undefined,signed:JournalEvent|undefined,sending=false,intentSeen=false,replayed:boolean|undefined;
+  let intent:string|undefined,quote:string|undefined,quoteOut:string|undefined,signed:JournalEvent|undefined,sending=false,intentSeen=false,replayed:boolean|undefined,exactInputBound=false;
   const fields:Record<JournalEvent["stage"],string[]>={
-    INTENT:["stage","intentId","replayed"],QUOTED:["stage","intentId","quoteId","quoteOutId"],
+    INTENT:["stage","intentId","replayed","exactInputBound"],QUOTED:["stage","intentId","quoteId","quoteOutId"],
     SIGNED:["stage","intentId","quoteId","quoteOutId","messageHash","playerSignature","playerPublicKey","transactionHash","genesisHash"],
-    SENDING:["stage","intentId"],AMBIGUOUS:["stage","intentId","txid"],RECORDED:["stage","intentId","txid"],SUBMITTED:["stage","intentId","txid"],
-    FINAL_CONFIRMED:["stage","intentId","txid"],FINAL_FAILED:["stage","intentId","txid"],ABANDONED:["stage","intentId"],UNSENT:["stage"],
+    SIGNATURE_POSTING:["stage","intentId"],SENDING:["stage","intentId"],SEND_REFUSED:["stage","intentId"],AMBIGUOUS:["stage","intentId","txid"],RECORDED:["stage","intentId","txid"],SUBMITTED:["stage","intentId","txid"],
+    FINAL_CONFIRMED:["stage","intentId","txid"],FINAL_FAILED:["stage","intentId","txid"],ABANDONED:["stage","intentId"],UNSENT:["stage"],EXPIRED_UNSENT:["stage","intentId","txid"],
   };
   for(const raw of values) {
     const stage=record(raw).stage as JournalEvent["stage"];
     if(!Object.hasOwn(fields,stage))throw new Error("CORRUPT_JOURNAL_EVENT");
     const e=closed(raw,fields[stage]);
     const previous=result.at(-1)?.stage;
-    if((previous?.startsWith("FINAL_") || previous==="ABANDONED" || previous==="UNSENT") && stage!==previous)throw new Error("TERMINAL_JOURNAL_CONFLICT");
+    if((previous?.startsWith("FINAL_") || previous==="ABANDONED" || previous==="UNSENT" || previous==="EXPIRED_UNSENT") && stage!==previous)throw new Error("TERMINAL_JOURNAL_CONFLICT");
     if(e.intentId!==undefined) { uuid(e.intentId);if(intent && e.intentId!==intent)throw new Error("JOURNAL_INTENT_MISMATCH"); }
     if(stage!=="AMBIGUOUS" && stage!=="ABANDONED" && stage!=="UNSENT" && e.intentId===undefined)throw new Error("JOURNAL_INTENT_REQUIRED");
     // UNSENT records that the first write was refused before transmission: no server state exists.
     if(stage==="UNSENT" && previous!==undefined)throw new Error("INVALID_JOURNAL_ORDER");
-    // Closure needs an explicit server-new record. Legacy INTENT entries omitted this flag even for
-    // replays, which may have been signed elsewhere: an absent flag must never stand for false.
+    // Only a server-new intent or a built replay proven to match the retained input can be abandoned.
     if(stage==="ABANDONED") {
       if(signed)throw new Error("SIGNED_OPERATION_RECONCILE");
       if(!intentSeen)throw new Error("INTENT_UNKNOWN_MANUAL_RECONCILIATION");
-      if(replayed)throw new Error("REPLAYED_OPERATION_RECONCILE");
-      if(replayed!==false)throw new Error("INTENT_REPLAY_STATUS_UNKNOWN");
+      if(replayed && !exactInputBound)throw new Error("REPLAYED_OPERATION_RECONCILE");
+      if(replayed===undefined)throw new Error("INTENT_REPLAY_STATUS_UNKNOWN");
     }
     if(stage==="INTENT") {
-      if(previous!==undefined)throw new Error("INVALID_JOURNAL_ORDER");intent=e.intentId as string;
+      if(previous!==undefined && (previous!=="AMBIGUOUS" || intent || intentSeen || result.length!==1))throw new Error("INVALID_JOURNAL_ORDER");intent=e.intentId as string;
       if(e.replayed!==undefined && typeof e.replayed!=="boolean")throw new Error("CORRUPT_JOURNAL_EVENT");
+      if(e.exactInputBound!==undefined && (e.exactInputBound!==true || e.replayed!==true || !recoverable))throw new Error("INVALID_JOURNAL_RECOVERY");
+      exactInputBound=e.exactInputBound===true;
       intentSeen=true;replayed=e.replayed as boolean|undefined;
     } else if(stage==="QUOTED") {
       if(previous!=="INTENT")throw new Error("INVALID_JOURNAL_ORDER");
@@ -77,8 +82,15 @@ function validateEvents(values:unknown[]):JournalEvent[] {
       mint(e.playerPublicKey);
       if(typeof e.playerSignature!=="string" || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(e.playerSignature) || typeof e.genesisHash!=="string" || !/^[1-9A-HJ-NP-Za-km-z]{32,64}$/.test(e.genesisHash))throw new Error("JOURNAL_SIGNATURE_REQUIRED");
       signed=e as unknown as JournalEvent;
+    } else if(stage==="SIGNATURE_POSTING") {
+      if(previous!=="SIGNED" || !signed)throw new Error("INVALID_JOURNAL_ORDER");
     } else if(stage==="SENDING") {
-      if(previous!=="SIGNED" || !signed)throw new Error("INVALID_JOURNAL_ORDER");sending=true;
+      if((previous!=="SIGNED" && previous!=="SIGNATURE_POSTING" && previous!=="SEND_REFUSED") || !signed)throw new Error("INVALID_JOURNAL_ORDER");sending=true;
+    } else if(stage==="SEND_REFUSED") {
+      if(previous!=="SENDING" || !signed)throw new Error("INVALID_JOURNAL_ORDER");sending=false;
+    } else if(stage==="EXPIRED_UNSENT") {
+      if(sending || !signed || (previous!=="SIGNED" && previous!=="SIGNATURE_POSTING" && previous!=="SEND_REFUSED") ||
+          e.txid!==signed.playerSignature)throw new Error("INVALID_JOURNAL_ORDER");
     } else if(stage==="SUBMITTED" || stage==="RECORDED" || stage.startsWith("FINAL_")) {
       if(!signed || !sending || !intent || e.intentId!==intent || e.txid!==signed.playerSignature)throw new Error("JOURNAL_FINAL_BINDING_REQUIRED");
       if((stage==="SUBMITTED" || stage==="RECORDED") && previous!=="SENDING")throw new Error("INVALID_JOURNAL_ORDER");
@@ -167,16 +179,37 @@ export class FileJournal {
     if (digest(JSON.parse(await readFile(file, "utf8"))) !== digest(policy)) throw new Error("JOURNAL_POLICY_CHANGED");
     return new FileJournal(directory, policy);
   }
+  async rankedRunScope(inboxScope: string): Promise<string> {
+    return this.withRankedSignalLock(async () => {
+      const path = join(this.#directory, "ranked-run-id");
+      try { await syncWrite(path, randomBytes(32).toString("hex") + "\n"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+      return this.#readRankedRunScope(inboxScope);
+    });
+  }
+  async assertRankedRunScope(inboxScope: string, expected: string): Promise<void> {
+    if (await this.#readRankedRunScope(inboxScope) !== expected) throw new Error("RANKED_RUN_SCOPE_CHANGED");
+  }
+  async #readRankedRunScope(inboxScope: string): Promise<string> {
+    const path = join(this.#directory, "ranked-run-id");
+    await regular(path, 65);
+    const runId = await readFile(path, "utf8");
+    if (!/^[a-f0-9]{64}\n$/.test(runId)) throw new Error("INVALID_RANKED_RUN_ID");
+    return digest({ kind: "ranked-run-v2", runId, inboxScope, directory: this.#directory, policy: this.#policy });
+  }
   #hash(key: string): string {
     if (typeof key !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(key)) throw new Error("INVALID_OPERATION_KEY");
     return digest({ key });
   }
   /** `expectedVersion`, a `capacity()` snapshot's `version`, refuses the reservation on another journal or once any other was made since. */
-  async reserve(key: string, payloadHash: string, tokenInMint: string, amountInRaw: string, origin: string, expectedVersion?: string): Promise<void> {
+  async reserve(key: string, payloadHash: string, tokenInMint: string, amountInRaw: string, origin: string, expectedVersion?: string, officialProxy?: Readonly<OfficialProxyIdentity>, recoveryOperation?: Readonly<Operation>): Promise<void> {
     if (expectedVersion !== undefined && (typeof expectedVersion !== "string" || !/^[0-9a-f]{64}$/.test(expectedVersion))) throw new Error("INVALID_JOURNAL_VERSION");
     if (!/^[0-9a-f]{64}$/.test(payloadHash)) throw new Error("INVALID_PAYLOAD_HASH");
     const url = new URL(origin);
     if (url.origin!==origin || url.protocol!=="https:" || url.username || url.password) throw new Error("INVALID_ORIGIN");
+    const scope = officialProxy === undefined ? { version: 1 as const } :
+      { version: 2 as const, apiBasePath: "/api" as const, accountId: uuid(officialProxy.accountId), actor: officialProxy.actor };
+    if (scope.version === 2 && scope.actor !== "trading_bot" && scope.actor !== "ai_agent") throw new Error("INVALID_JOURNAL_PROXY_IDENTITY");
     const keyHash = this.#hash(key), asset = mint(tokenInMint), amount = rawAmount(amountInRaw);
     // A crash may leave this lock. Never break it automatically; reconcile the previous process first.
     await this.#exclusive("reservation.lock", "RESERVATION_LOCK_HELD", async () => {
@@ -191,7 +224,8 @@ export class FileJournal {
       if (expectedVersion !== undefined && this.#version(scan.files.length) !== expectedVersion) throw new Error("JOURNAL_CHANGED_SINCE_SNAPSHOT");
       const max = this.#policy.inputBudgets[asset];
       if (!max || scan.files.length >= this.#policy.maxOperations || (scan.reserved.get(asset) ?? 0n) + BigInt(amount) > BigInt(max)) throw new Error("DURABLE_BUDGET_EXHAUSTED");
-      await syncWrite(join(this.#directory, keyHash + ".json"), JSON.stringify({ version: 1, keyHash, payloadHash, tokenInMint: asset, amountInRaw: amount, origin } satisfies OperationRecord) + "\n");
+      const row = { ...scope, keyHash, payloadHash, tokenInMint: asset, amountInRaw: amount, origin, ...(recoveryOperation ? { recoveryOperation } : {}) };
+      await syncWrite(join(this.#directory, keyHash + ".json"), JSON.stringify(row) + "\n");
     });
   }
   /**
@@ -226,25 +260,28 @@ export class FileJournal {
     let unresolved = 0;
     const reserved = new Map<string, bigint>();
     for (const name of files) {
-      const path = join(this.#directory, name); await regular(path, 2048);
-      const value = record(JSON.parse(await readFile(path, "utf8")));
-      if (value.version !== 1 || value.keyHash + ".json" !== name || typeof value.payloadHash !== "string" || !/^[0-9a-f]{64}$/.test(value.payloadHash)) throw new Error("CORRUPT_RESERVATION");
-      const asset = mint(value.tokenInMint), amount = rawAmount(value.amountInRaw);
-      const last = (await this.#readHash(name.slice(0, -5))).events.at(-1)?.stage;
-      if (last !== "FINAL_CONFIRMED" && last !== "FINAL_FAILED" && last !== "ABANDONED" && last !== "UNSENT") unresolved++;
+      const { reservation, events } = await this.#readHash(name.slice(0, -5));
+      const asset = reservation.tokenInMint, amount = reservation.amountInRaw;
+      const last = events.at(-1)?.stage;
+      if (last !== "FINAL_CONFIRMED" && last !== "FINAL_FAILED" && last !== "ABANDONED" && last !== "UNSENT" && last !== "EXPIRED_UNSENT") unresolved++;
       reserved.set(asset, (reserved.get(asset) ?? 0n) + BigInt(amount));
     }
     return { files, unresolved, reserved };
   }
   /** Validates that an event could be appended now, without writing it. */
   async check(key: string, event: JournalEvent): Promise<void> {
-    this.#encode((await this.read(key)).events, event);
+    const prior = await this.#readHash(this.#hash(key));
+    this.#encode(prior.events, event, Boolean(prior.recoveryOperation));
   }
-  #encode(events: JournalEvent[], event: JournalEvent): string {
-    if (events.length >= 16) throw new Error("JOURNAL_EVENT_LIMIT");
+  #encode(events: JournalEvent[], event: JournalEvent, recoverable: boolean): string {
+    const limit = recoverable ? maxRankedEvents : maxEvents;
+    // Before another durable attempt, reserve space for its outcome and terminal chain evidence.
+    if (events.length >= limit || (recoverable && event.stage === "SENDING" && events.length > limit - 3)) {
+      throw new Error("JOURNAL_EVENT_LIMIT");
+    }
     const encoded = JSON.stringify(event);
     if (encoded.length > 2048 || Object.keys(event).some(k => !eventKeys.includes(k))) throw new Error("INVALID_JOURNAL_EVENT");
-    validateEvents([...events,JSON.parse(encoded)]);
+    validateEvents([...events, JSON.parse(encoded)], recoverable);
     return encoded;
   }
   /** Exclusive lock file in the journal directory. A crash may leave it; it is never broken automatically. */
@@ -262,10 +299,20 @@ export class FileJournal {
   async withFinalizationLock<T>(key: string, task: () => Promise<T>): Promise<T> {
     return this.#exclusive(this.#hash(key) + ".finalize.lock", "FINALIZATION_LOCK_HELD", task);
   }
-  async append(key: string, event: JournalEvent, beforeWrite?: () => void): Promise<void> {
+  /** Only one ranked gateway may advance this journal and its signal inbox at a time. */
+  async withRankedSignalLock<T>(task: () => Promise<T>): Promise<T> {
+    return this.#exclusive("ranked-signal.lock", "RANKED_SIGNAL_LOCK_HELD", task);
+  }
+  async append(key: string, event: JournalEvent, beforeWrite?: () => void, signedRecovery?: SignedRecovery): Promise<void> {
     // Read, validation and write are one step per key, so concurrent writers cannot both pass validation.
     await this.#exclusive(this.#hash(key) + ".append.lock", "JOURNAL_APPEND_LOCK_HELD", async () => {
-      const encoded = this.#encode((await this.read(key)).events, event);
+      const prior = await this.#readHash(this.#hash(key));
+      let encoded = this.#encode(prior.events, event, Boolean(prior.recoveryOperation));
+      if (signedRecovery) {
+        if (event.stage !== "SIGNED" || !prior.recoveryOperation) throw new Error("INVALID_JOURNAL_RECOVERY");
+        encoded = JSON.stringify({ ...event, signedRecovery });
+        if (encoded.length > 8192) throw new Error("INVALID_JOURNAL_RECOVERY");
+      }
       const path = join(this.#directory, this.#hash(key) + ".events");
       try { await regular(path); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
       const handle = await open(path, "a", 0o600);
@@ -273,16 +320,41 @@ export class FileJournal {
     });
   }
   async read(key: string): Promise<{ reservation: OperationRecord; events: JournalEvent[] }> {
-    return this.#readHash(this.#hash(key));
+    const { reservation, events } = await this.#readHash(this.#hash(key));
+    return { reservation, events };
   }
-  async #readHash(hash:string): Promise<{ reservation: OperationRecord; events: JournalEvent[] }> {
+  /** Internal replay data. Never include these records in receipts, logs or support reports. */
+  async readRecovery(key: string): Promise<{ operation?: unknown; signed?: unknown }> {
+    const { recoveryOperation, signedRecovery } = await this.#readHash(this.#hash(key));
+    return { operation: recoveryOperation, signed: signedRecovery };
+  }
+  /** A missing reservation is recoverable only when no orphaned record or writer lock exists. */
+  async readIfReserved(key: string): Promise<Awaited<ReturnType<FileJournal["read"]>> | null> {
+    const hash = this.#hash(key);
+    try { return await this.read(key); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    for (const name of [hash + ".events", hash + ".append.lock", hash + ".finalize.lock", "reservation.lock"]) {
+      try { await lstat(join(this.#directory, name)); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      throw new Error("RANKED_RESERVATION_UNCERTAIN");
+    }
+    return null;
+  }
+  async #readHash(hash:string): Promise<{ reservation: OperationRecord; events: JournalEvent[]; recoveryOperation?: unknown; signedRecovery?: unknown }> {
     const path = join(this.#directory, hash + ".json");
     await regular(path, 2048);
-    const value = record(JSON.parse(await readFile(path, "utf8")));
-    if (value.version !== 1 || value.keyHash !== hash || typeof value.payloadHash !== "string" || !/^[0-9a-f]{64}$/.test(value.payloadHash)) throw new Error("CORRUPT_RESERVATION");
+    const { recoveryOperation, ...value } = record(JSON.parse(await readFile(path, "utf8")));
+    const routeScopeValid = value.version === 1 ? !["apiBasePath", "accountId", "actor"].some(k => Object.hasOwn(value, k)) :
+      value.version === 2 && value.apiBasePath === "/api" &&
+        (value.actor === "trading_bot" || value.actor === "ai_agent") && Boolean(uuid(value.accountId));
+    if (!routeScopeValid || value.keyHash !== hash || typeof value.payloadHash !== "string" || !/^[0-9a-f]{64}$/.test(value.payloadHash)) throw new Error("CORRUPT_RESERVATION");
     mint(value.tokenInMint); rawAmount(value.amountInRaw);
     if (typeof value.origin!=="string" || new URL(value.origin).origin!==value.origin || !value.origin.startsWith("https://")) throw new Error("CORRUPT_RESERVATION");
     let events: JournalEvent[] = [];
+    let signedRecovery: unknown;
     const eventFile = join(this.#directory, hash + ".events");
     try {
       await regular(eventFile);
@@ -291,9 +363,16 @@ export class FileJournal {
       let rows:unknown[];
       try { rows=content.trimEnd().split("\n").map(line=>JSON.parse(line) as unknown); }
       catch {throw new Error("CORRUPT_JOURNAL_EVENT");}
-      events=validateEvents(rows);
-      if (events.length > 16) throw new Error("JOURNAL_EVENT_LIMIT");
+      events=validateEvents(rows.map(row => {
+        const { signedRecovery: saved, ...event } = record(row);
+        if (saved !== undefined) {
+          if (event.stage !== "SIGNED" || signedRecovery !== undefined || recoveryOperation === undefined) throw new Error("INVALID_JOURNAL_RECOVERY");
+          signedRecovery = saved;
+        }
+        return event;
+      }), Boolean(recoveryOperation));
+      if (events.length > (recoveryOperation ? maxRankedEvents : maxEvents)) throw new Error("JOURNAL_EVENT_LIMIT");
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
-    return { reservation: value as unknown as OperationRecord, events };
+    return { reservation: value as unknown as OperationRecord, events, recoveryOperation, signedRecovery };
   }
 }

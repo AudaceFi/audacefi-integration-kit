@@ -1,6 +1,6 @@
 # Assurance and qualification
 
-The kit contains connection code for AI agents and trading bots, a narrow devnet reference adapter, an offline signal adapter and deterministic local examples. Engineering reviews and tests are evidence within their stated scope; they do not certify a live deployment, provider, wallet, strategy performance or economic result.
+The kit contains connection code for AI agents and trading bots, a narrow devnet reference adapter, ranked gateway code and deterministic offline examples. Engineering reviews and tests establish behavior for the exact reviewed revision and test environment. Live deployment, provider, wallet, strategy and economic performance require separate qualification.
 
 ## Locally qualified scope
 
@@ -24,6 +24,8 @@ Audit conclusions apply only to their exact reviewed source revision, hosting st
 
 ## Real integration qualification
 
-Operators must independently qualify their supplied deployment/profile pins, API deployment approval, RPC provider, wallet callbacks and decision policy. Supplied genesis/program equality does not certify the supplied pins themselves. An unavailable durable route blocks execution without fallback to cosign, direct RPC or an exchange executor. Preserve write opt-in, journal budgets, unresolved-operation blocking, exact-transaction reconciliation and verified finality.
+Official activation requires a qualified AudaceFi deployment and a release package with its deployment profile, issuer trust information and an active signed approval. AudaceFi supplies the profile and issuer information through a separate release process. The package and issuance channel are pending. Operators independently verify the provenance and currency of the pins they configure, as well as their RPC provider, wallet callbacks and decision policy. An unavailable durable route blocks execution without fallback to cosign, direct RPC or an exchange executor. Preserve write opt-in, journal budgets, unresolved-operation blocking, exact-transaction reconciliation and verified finality.
+
+On a qualified deployment, the account-scoped receipt reports the provisional rank and valuation time from AudaceFi. The kit checks that the response refers to the same intent and transaction and verifies chain finality independently. Evidence from an earlier isolated validation is limited to that run’s recorded revisions and environment.
 
 Any real target test, enrollment, credential provisioning, signing or execution needs a distinct authorized scope and review. See [CONNECTING](CONNECTING.md), [RECOVERY](RECOVERY.md) and [SUPPORT](SUPPORT.md). Apache-2.0 licenses the original source; it does not grant service access or replace third-party obligations.
