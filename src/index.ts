@@ -1,5 +1,5 @@
 export { AudaceFiClient, ClientError, parseQuote, parseSubmission } from "./client.ts";
-export type { ClientOptions, FetchPort, IntentInput, Intent, Quote, SingleQuote, RouteQuote, Submission } from "./client.ts";
+export type { ClientOptions, FetchPort, IntentInput, Intent, OfficialProxyOptions, Quote, SingleQuote, RouteQuote, Submission } from "./client.ts";
 export { FileJournal } from "./journal.ts";
 export type { JournalPolicy, JournalEvent, JournalCapacity } from "./journal.ts";
 export { runOperation, reconcileOperation, finalizeOperation, abandonOperation } from "./operation.ts";
@@ -19,3 +19,8 @@ export type { RpcPort, ReadMethod } from "./rpc.ts";
 export type { Allowlist, RequestGuard } from "./client.ts";
 export { parseSpotSignal, prepareSpotSignalFromJournal } from "./signals.ts";
 export type { SpotSignal, SpotSignalPolicy, SpotSignalHoldings, SpotSignalPlan, SpotSignalLimits } from "./signals.ts";
+export { createOfficialRankedSignalGateway, createRankedSignalGateway, officialRankedApprovalBindings, SOLANA_DEVNET_GENESIS } from "./ranked-signal.ts";
+export type { OfficialRankedSignalSetup, RankedSignalSetup, RankedSignalReceipt } from "./ranked-signal.ts";
+export { officialApprovalDeploymentDigest, officialApprovalSigningBytes } from "./official-approval.ts";
+export type { OfficialApprovalBindings, OfficialApprovalEvidence, OfficialApprovalPayload, OfficialApprovalSource, SignedOfficialApproval } from "./official-approval.ts";
+export type { RankedEvidence, RankedEvidenceRequest, ReadRankedEvidence } from "./ranked-proof.ts";

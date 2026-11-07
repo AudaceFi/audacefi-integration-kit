@@ -6,6 +6,42 @@
     "description": "Source-reviewed consumer shapes. Public source contract; optional durable routes are not certified as deployed. No servers or credentials embedded."
   },
   "paths": {
+    "/v1/me": {
+      "get": {
+        "operationId": "readOwnOperatorIdentity",
+        "description": "Read the active account and the scope of the presented API key. Official execution binds this response to the same bearer used for the protected request.",
+        "security": [{ "ApiKeyBearer": [] }],
+        "responses": {
+          "200": {
+            "description": "Account identity and onboarding status. The client consumes only the fields shown here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["account", "onboardingComplete", "credentialScopes"],
+                  "properties": {
+                    "account": {
+                      "type": "object",
+                      "required": ["id", "status", "participantType", "participantTypeDeclaredAt"],
+                      "properties": {
+                        "id": { "type": "string", "format": "uuid" },
+                        "status": { "type": "string" },
+                        "participantType": { "enum": ["trading_bot", "ai_agent"] },
+                        "participantTypeDeclaredAt": { "type": ["string", "null"], "format": "date-time" }
+                      }
+                    },
+                    "onboardingComplete": { "type": "boolean" },
+                    "credentialScopes": { "type": "array", "uniqueItems": true, "items": { "enum": ["read", "execute"] } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Authentication refused" },
+          "403": { "description": "Scope or account access refused" }
+        }
+      }
+    },
     "/v1/me/state": {
       "get": {
         "operationId": "readOwnState",
@@ -420,6 +456,46 @@
       },
       "description": "Read only, absence does not authorize replacement"
     },
+    "/v1/swap-intents/{id}/ranked-evidence": {
+      "get": {
+        "operationId": "readRankedEvidence",
+        "description": "Optional reviewed read capability for the account that owns a Crypto Bro devnet intent.",
+        "security": [
+          {
+            "ApiKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact ranked fill, or explicit null while evidence is pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./ranked-evidence.schema.json"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Intent is unavailable to the caller or the deployment lacks this route."
+          },
+          "429": {
+            "description": "Read rate limit."
+          }
+        }
+      }
+    },
     "/v1/swap-intents/{id}/result": {
       "post": {
         "operationId": "recordFinalResult",
@@ -603,6 +679,10 @@
                           },
                           "eligible": {
                             "type": "boolean"
+                          },
+                          "symbol": {
+                            "type": ["string", "null"],
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,15}$"
                           }
                         }
                       }
@@ -642,6 +722,10 @@
           },
           "replayed": {
             "type": "boolean"
+          },
+          "inputBinding": {
+            "const": "audacefi.swap-intent-input.v1",
+            "description": "Present for an opted-in request whose stored intent exactly matches the authenticated account, key and admitted fields."
           }
         }
       },
@@ -687,6 +771,10 @@
           },
           "surface": {
             "const": "api"
+          },
+          "inputBinding": {
+            "const": "audacefi.swap-intent-input.v1",
+            "description": "Request verification against the exact stored intent on an idempotent retry. A mismatched stored request is refused."
           }
         }
       },
@@ -964,6 +1052,10 @@
         "properties": {
           "protocol": {
             "const": "audacefi.bench.submission.v1"
+          },
+          "resultStatus": {
+            "enum": [null, "confirmed", "failed"],
+            "description": "The durable submission's stored terminal product result, or explicit null when no terminal result is recorded. A legacy deployment may omit the field."
           },
           "submission": {
             "oneOf": [

@@ -42,22 +42,24 @@ Open the journal separately with an approved fixed input budget and controlled a
 
 ## Deployment profile and trust
 
-Supply every `BenchProfile` field through reviewed application configuration. No profile file loader or default live profile is provided.
+Supply the required `BenchProfile` fields through reviewed application configuration. AudaceFi supplies the official deployment profile and issuer trust anchor. The operator supplies the local signer, key callback, policy and current signed approval. [Official operator setup](OPERATOR-SIGNALS.md)
 
 | Field | Required qualification |
 | --- | --- |
 | `apiOrigin` | Exact approved HTTPS origin, matching the client. No paths, credentials or query. |
+| `apiBasePath` | `/api` for the official proxy. The root validation path omits this field. |
 | `expectedGenesis` | Independently established genesis of the authorized devnet target. The reader checks equality, not the external classification of that value as devnet. |
 | `programId`, `programData`, `programDataSha256` | Authorized upgradeable bench program, its ProgramData account and SHA256 of the **entire raw ProgramData account**, including metadata. Upgrade or metadata change invalidates the pin. |
 | `admin`, `poster`, `freshnessSeconds` | Expected bench configuration and server price-poster identity. Freshness must be1..86400seconds. |
 | `usdcMainnet`, `mappings` | USDC identity and unique mainnet identity/devnet mint pairs with verified0..9decimals. Between2and64 mappings. |
+| `singleSwapFeeBps` | Optional single-swap fee. Omit for the legacy 10 bps bench. Set to 20 only for an independently reviewed 20 bps program bound to the ProgramData pin. |
 | `apiApproval` | Operator attestation of a separately qualified API deployment: protocol `audacefi.bench.submission.v1`, `validFromMs` and `expiresAtMs`. The adapter checks the window, including after waits. It does **not** discover or certify server route availability from this attestation. No automatic renewal. |
 
 The reference suite clones and freezes this profile. Keep endpoints, clocks, application code, transports and wallet callbacks within your trusted deployment boundary. Replacing them with malicious functions defeats the trust model. An approved provider can still give incorrect responses; this reader does not implement consensus verification. Do not derive trust pins from the same untrusted response being checked. The current profile supports only a deliberately approved devnet bench, never a generic network or mainnet executor.
 
 ## Concrete supported protocol
 
-The builder emits legacy transactions with exactly two writable signer slots: player fee payer and the configured server poster. Instruction order is idempotent output associated-token-account creation, one or two `post_price` instructions bound to the quote, then `swap` or `swap_route`. BUY/SELL charge10basis points in USDC; token-to-token route charges20basis points in the output token. Integer arithmetic follows checked u128 intermediates, floor division and positive u64 results. Route gross/fee/net must match the quoted amounts exactly.
+The builder emits legacy transactions with exactly two writable signer slots: player fee payer and the configured server poster. Instruction order is idempotent output associated-token-account creation, one or two `post_price` instructions bound to the quote, then `swap` or `swap_route`. A BUY deducts the configured fee from gross USDC input. A SELL deducts it from gross USDC output. The legacy profile uses 10 bps. Both ranked profiles require 20 bps, and the official proxy also requires the pinned Solana devnet genesis and an approval window of at most one hour. Token-to-token routes charge 20 bps in the output token. Integer arithmetic follows checked u128 intermediates, floor division and positive u64 results. Route gross/fee/net must match the quoted amounts exactly.
 
 The semantic checker decodes the final message and checks exact instruction data, account order, mapped mints, signers, payer and privileges after transaction-wide union. It refuses extra instructions, changed prices or amounts, privilege escalation and unknown builds. Builder and checker share the declarative protocol plan; independent review and independently computed ABI/math/PDA vectors are required assurance beyond their mutual agreement.
 

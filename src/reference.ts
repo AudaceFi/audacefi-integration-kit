@@ -1,9 +1,9 @@
 import { AudaceFiClient, type Quote, type Submission } from "./client.ts";
-import { closed, integer, record, timestamp } from "./contract.ts";
+import { closed, integer, record, SOLANA_DEVNET_GENESIS, timestamp } from "./contract.ts";
 import { digest } from "./canonical.ts";
 import type { FinalEvidence, Operation, OperatorPorts, PlanEvidence, VerifiedTarget } from "./operation.ts";
 import type { RpcPort } from "./rpc.ts";
-import { benchAddresses, benchPlan, verifyBenchMessage, type BenchProfile } from "./bench.ts";
+import { benchAddresses, benchAmounts, benchPlan, verifyBenchMessage, type BenchProfile } from "./bench.ts";
 import { associatedAddress, ASSOCIATED_TOKEN_PROGRAM, CLOCK_SYSVAR, compileLegacy, decode58, decodeLegacy, discriminator, encode58, hashBytes, isCurvePoint, SYSTEM_PROGRAM, SYSVAR_OWNER, TOKEN_PROGRAM, UPGRADEABLE_LOADER, verifyEd25519 } from "./solana.ts";
 
 export interface WalletPort {
@@ -11,7 +11,7 @@ export interface WalletPort {
   signTransaction: (unsignedBase64: string) => Promise<string>;
 }
 interface ChainAccount { owner: string; executable: boolean; lamports: number; bytes: Buffer }
-interface BuildRecord { operation: Readonly<Operation>; quote: Readonly<Quote>; blockhash: string; lastValidBlockHeight: number; createdAt: number; checked: boolean }
+interface BuildRecord { operation: Readonly<Operation>; quote: Readonly<Quote>; blockhash: string; lastValidBlockHeight: number; createdAt: number; checked: boolean; restored?: true }
 function freeze<T>(v: T): Readonly<T> { if (v && typeof v === "object") { Object.values(v).forEach(freeze); Object.freeze(v); } return v; }
 function context(raw: unknown, minimum: number) { const r = record(raw), slot = integer(record(r.context).slot, minimum, Number.MAX_SAFE_INTEGER); if (!("value" in r)) throw new Error("RPC_VALUE_REQUIRED"); return { slot, value: r.value }; }
 function account(raw: unknown): ChainAccount | null {
@@ -49,13 +49,136 @@ function finalError(raw: unknown, instructions: number, accounts: number): strin
   }
   throw new Error("UNSUPPORTED_FINAL_ERROR");
 }
+
+type DecodedTransaction = ReturnType<typeof decodeLegacy>;
+type DecodedInstruction = DecodedTransaction["instructions"][number];
+type MintMapping = BenchProfile["mappings"][number];
+
+function finalizedInstructionData(instruction: DecodedInstruction, program: string, name: string, length: number): Buffer {
+  const data = Buffer.from(instruction.data);
+  if (instruction.program !== program || data.length !== length || !data.subarray(0, 8).equals(discriminator("global", name))) {
+    throw new Error("INVALID_FINALIZED_BENCH_INSTRUCTION");
+  }
+  return data;
+}
+
+function checkFinalizedAccounts(instruction: DecodedInstruction, addresses: string[]): void {
+  if (instruction.accounts.length !== addresses.length || addresses.some((address, index) => instruction.accounts[index]?.address !== address)) {
+    throw new Error("INVALID_FINALIZED_BENCH_ACCOUNTS");
+  }
+}
+
+function finalizedTokenRows(value: unknown, count: number): Map<number, Record<string, unknown>> {
+  if (!Array.isArray(value) || value.length > count) throw new Error("MISSING_FINALIZED_TOKEN_BALANCES");
+  const rows = new Map<number, Record<string, unknown>>();
+  for (const entry of value) {
+    const row = record(entry);
+    const index = integer(row.accountIndex, 0, count - 1);
+    if (rows.has(index)) throw new Error("DUPLICATE_FINALIZED_TOKEN_BALANCE");
+    rows.set(index, row);
+  }
+  return rows;
+}
+
+function finalizedTokenAmount(value: unknown, mint: MintMapping, owner: string): bigint {
+  const row = record(value);
+  const { amount, decimals } = record(row.uiTokenAmount);
+  if (row.mint !== mint.devnet || row.owner !== owner || row.programId !== TOKEN_PROGRAM || decimals !== mint.decimals ||
+      typeof amount !== "string" || !/^(0|[1-9][0-9]{0,19})$/.test(amount) || BigInt(amount) > (1n << 64n) - 1n) {
+    throw new Error("INVALID_FINALIZED_TOKEN_BALANCE");
+  }
+  return BigInt(amount);
+}
+
+/** Reconstruct expected effects from the signed message so recovery needs no in-memory quote. */
+function verifyOfficialFinalizedBalances(
+  profile: BenchProfile, saved: Readonly<Submission>, decoded: DecodedTransaction, meta: Record<string, unknown>,
+): void {
+  const player = saved.playerPublicKey;
+  const route = saved.quoteOutId !== null;
+  if (decoded.accounts[1]?.address !== profile.poster || decoded.instructions.length !== (route ? 4 : 3)) {
+    throw new Error("INVALID_FINALIZED_BENCH_MESSAGE");
+  }
+  const ata = decoded.instructions[0]!;
+  const swap = decoded.instructions.at(-1)!;
+  const swapData = finalizedInstructionData(swap, profile.programId, route ? "swap_route" : "swap", route ? 16 : 17);
+  if (!route && swapData[8] !== 0 && swapData[8] !== 1) throw new Error("INVALID_FINALIZED_BENCH_DIRECTION");
+  const buy = !route && swapData[8] === 0;
+  const inputRaw = swapData.readBigUInt64LE(route ? 8 : 9);
+  const usdc = profile.mappings.find(mint => mint.mainnet === profile.usdcMainnet)!;
+  const first = profile.mappings.find(mint => mint.devnet === swap.accounts[1]?.address);
+  const second = route ? profile.mappings.find(mint => mint.devnet === swap.accounts[2]?.address) : usdc;
+  if (!first || !second || first === usdc || first === second || (route && second === usdc)) {
+    throw new Error("INVALID_FINALIZED_BENCH_PAIR");
+  }
+  const input = buy ? usdc : first;
+  const output = buy ? first : second;
+  const feeMint = route ? output : usdc;
+  const { config, vault, fee, price } = benchAddresses(profile);
+  const playerIn = associatedAddress(player, input.devnet), playerOut = associatedAddress(player, output.devnet);
+  const vaultIn = associatedAddress(vault.address, input.devnet), vaultOut = associatedAddress(vault.address, output.devnet);
+  const feeVault = associatedAddress(fee.address, feeMint.devnet);
+  const priceIn = price(first.devnet).address;
+  const priceOut = route ? price(second.devnet).address : undefined;
+  if (ata.program !== ASSOCIATED_TOKEN_PROGRAM || ata.data.length !== 1 || ata.data[0] !== 1) {
+    throw new Error("INVALID_FINALIZED_BENCH_ATA");
+  }
+  checkFinalizedAccounts(ata, [player, playerOut, player, output.devnet, SYSTEM_PROGRAM, TOKEN_PROGRAM]);
+  checkFinalizedAccounts(swap, route ? [
+    config.address, input.devnet, output.devnet, usdc.devnet, priceIn, priceOut!, vault.address,
+    vaultIn, vaultOut, associatedAddress(vault.address, usdc.devnet), fee.address, feeVault,
+    player, playerIn, playerOut, TOKEN_PROGRAM,
+  ] : [
+    config.address, first.devnet, usdc.devnet, priceIn, vault.address, buy ? vaultOut : vaultIn,
+    buy ? vaultIn : vaultOut, fee.address, feeVault, player, buy ? playerOut : playerIn,
+    buy ? playerIn : playerOut, TOKEN_PROGRAM,
+  ]);
+  const readPrice = (index: number, mint: MintMapping, priceAddress: string) => {
+    const instruction = decoded.instructions[index]!;
+    const data = finalizedInstructionData(instruction, profile.programId, "post_price", 20);
+    checkFinalizedAccounts(instruction, [config.address, profile.poster, mint.devnet, priceAddress, SYSTEM_PROGRAM]);
+    return { price: data.readBigUInt64LE(8).toString(), expo: data.readInt32LE(16) };
+  };
+  const primary = readPrice(1, first, priceIn);
+  const secondary = priceOut ? readPrice(2, second, priceOut) : undefined;
+  const amounts = benchAmounts(inputRaw.toString(), input.decimals, output.decimals, primary.price, primary.expo,
+    route ? "route" : buy ? "buy" : "sell", secondary?.price, secondary?.expo, 20);
+  const expected = [
+    { address: playerIn, mint: input, owner: player, delta: -inputRaw },
+    { address: playerOut, mint: output, owner: player, delta: amounts.output },
+    { address: vaultIn, mint: input, owner: vault.address, delta: buy ? inputRaw - amounts.fee : inputRaw },
+    { address: vaultOut, mint: output, owner: vault.address, delta: -amounts.vaultRequired },
+    { address: feeVault, mint: feeMint, owner: fee.address, delta: amounts.fee },
+  ];
+  if (new Set(expected.map(row => row.address)).size !== expected.length) throw new Error("INVALID_FINALIZED_BENCH_ACCOUNTS");
+
+  const count = decoded.accounts.length;
+  const before = finalizedTokenRows(meta.preTokenBalances, count), after = finalizedTokenRows(meta.postTokenBalances, count);
+  for (const { address, mint, owner, delta } of expected) {
+    const index = decoded.accounts.findIndex(account => account.address === address);
+    const preRow = before.get(index);
+    // The idempotent output ATA instruction may have created an account at this index.
+    const created = preRow === undefined && address === playerOut && Array.isArray(meta.preBalances) &&
+      meta.preBalances.length === count && meta.preBalances[index] === 0 && Array.isArray(meta.postBalances) &&
+      meta.postBalances.length === count && integer(meta.postBalances[index], 1, Number.MAX_SAFE_INTEGER) > 0;
+    const pre = created ? 0n : finalizedTokenAmount(preRow, mint, owner);
+    const post = finalizedTokenAmount(after.get(index), mint, owner);
+    if (post - pre !== delta) throw new Error("FINALIZED_BENCH_BALANCE_MISMATCH");
+  }
+}
 /** Concrete reference ports. Only explicit method calls perform injected reads/signing. */
 export function createReferenceAdapters(options: { profile: BenchProfile; client: AudaceFiClient; rpc: RpcPort; wallet: WalletPort; clock?: () => number }) {
   let cloned: BenchProfile; try { cloned = structuredClone(options.profile); } catch { throw new Error("INVALID_PROFILE"); }
   const p = freeze(cloned), { client, rpc, wallet } = options, clock = options.clock ?? Date.now;
-  closed(p, ["apiOrigin", "expectedGenesis", "programId", "programData", "programDataSha256", "admin", "poster", "freshnessSeconds", "usdcMainnet", "mappings", "apiApproval"]);
+  closed(p, ["apiOrigin", "apiBasePath", "expectedGenesis", "programId", "programData", "programDataSha256", "admin", "poster", "freshnessSeconds", "usdcMainnet", "mappings", "apiApproval", "singleSwapFeeBps"]);
+  if (p.singleSwapFeeBps !== undefined && p.singleSwapFeeBps !== 10 && p.singleSwapFeeBps !== 20) throw new Error("INVALID_SINGLE_SWAP_FEE");
+  if (p.apiBasePath === "/api" && (p.expectedGenesis !== SOLANA_DEVNET_GENESIS || p.singleSwapFeeBps !== 20)) {
+    throw new Error("RANKED_OFFICIAL_PROFILE_REQUIRED");
+  }
   let apiUrl: URL; try { apiUrl = new URL(p.apiOrigin); } catch { throw new Error("INVALID_PROFILE_ORIGIN"); }
-  if (apiUrl.protocol !== "https:" || apiUrl.origin !== p.apiOrigin || client.origin !== p.apiOrigin || !/^[1-9A-HJ-NP-Za-km-z]{32,64}$/.test(p.expectedGenesis) || !/^[0-9a-f]{64}$/.test(p.programDataSha256)) throw new Error("INVALID_PROFILE");
+  if (apiUrl.protocol !== "https:" || apiUrl.origin !== p.apiOrigin || client.origin !== p.apiOrigin ||
+      (p.apiBasePath !== undefined && (p.apiBasePath !== "/api" || !client.writesAuthorized)) ||
+      client.apiBasePath !== (p.apiBasePath ?? "") || !/^[1-9A-HJ-NP-Za-km-z]{32,64}$/.test(p.expectedGenesis) || !/^[0-9a-f]{64}$/.test(p.programDataSha256)) throw new Error("INVALID_PROFILE");
   [p.programId, p.programData, p.admin, p.poster, p.usdcMainnet].forEach(k => decode58(k, 32));
   if (!isCurvePoint(decode58(p.poster, 32)) || p.programId === p.programData || [SYSTEM_PROGRAM, TOKEN_PROGRAM, ASSOCIATED_TOKEN_PROGRAM].includes(p.programId)) throw new Error("INVALID_PROFILE_PROGRAM");
   integer(p.freshnessSeconds, 1, 86400);
@@ -64,10 +187,13 @@ export function createReferenceAdapters(options: { profile: BenchProfile; client
   const usdc = p.mappings.find(m => m.mainnet === p.usdcMainnet); if (!usdc) throw new Error("USDC_MAPPING_REQUIRED");
   closed(p.apiApproval, ["protocol", "validFromMs", "expiresAtMs"]);
   if (p.apiApproval.protocol !== "audacefi.bench.submission.v1" || integer(p.apiApproval.expiresAtMs, 1, 8000000000000) <= integer(p.apiApproval.validFromMs, 0, 8000000000000)) throw new Error("API_DEPLOYMENT_APPROVAL_REQUIRED");
+  if (p.apiBasePath === "/api" && p.apiApproval.expiresAtMs - p.apiApproval.validFromMs > 3_600_000) {
+    throw new Error("API_DEPLOYMENT_APPROVAL_WINDOW_TOO_LONG");
+  }
   const addresses = benchAddresses(p), builds = new Map<string, BuildRecord>();
   let lastSlot = 0, lastTime = 0;
   const now = () => { const t = integer(clock(), lastTime, 8000000000000); lastTime = t; return t; };
-  const approval = () => { const t = now(); if (client.origin !== p.apiOrigin || t < p.apiApproval.validFromMs || t >= p.apiApproval.expiresAtMs) throw new Error("API_DEPLOYMENT_APPROVAL_EXPIRED"); };
+  const approval = () => { const t = now(); if (client.origin !== p.apiOrigin || client.apiBasePath !== (p.apiBasePath ?? "") || t < p.apiApproval.validFromMs || t >= p.apiApproval.expiresAtMs) throw new Error("API_DEPLOYMENT_APPROVAL_EXPIRED"); };
   const genesis = async () => { if (await rpc.call("getGenesisHash", []) !== p.expectedGenesis) throw new Error("GENESIS_MISMATCH"); };
   const withContext = (raw: unknown) => { const c = context(raw, lastSlot); lastSlot = c.slot; return c; };
   const config = () => ({ commitment: "finalized", minContextSlot: lastSlot });
@@ -109,7 +235,7 @@ export function createReferenceAdapters(options: { profile: BenchProfile; client
     const accountKeys = plan.instructions.flatMap(ix => ix.accounts.map(a => a.address));
     const chain = await snapshot(accountKeys), player = owned(chain.map.get(o.playerPublicKey), SYSTEM_PROGRAM, 0);
     const balance = token(chain.map.get(plan.playerIn), plan.input.devnet, o.playerPublicKey);
-    const out = chain.map.get(plan.playerOut); if (out) token(out, plan.output.devnet, o.playerPublicKey);
+    const out = chain.map.get(plan.playerOut), outputBalance = out === null ? 0n : token(out, plan.output.devnet, o.playerPublicKey);
     token(chain.map.get(plan.vaultIn), plan.input.devnet, addresses.vault.address);
     const reserve = token(chain.map.get(plan.vaultOut), plan.output.devnet, addresses.vault.address);
     token(chain.map.get(plan.feeVault), plan.feeMint, addresses.fee.address);
@@ -136,26 +262,34 @@ export function createReferenceAdapters(options: { profile: BenchProfile; client
     await genesis(); approval();
     const checkedAt = now(); if (checkedAt - chain.observedAt > 120000 || checkedAt >= timestamp(q.expiresAt)) throw new Error("REFERENCE_EVIDENCE_EXPIRED");
     built.checked = true;
-    return { operationHash: digest(o), quoteId: q.quoteId, messageHash: decoded.messageHash, genesisHash: p.expectedGenesis, balanceObservedAtMs: chain.observedAt, eligibilityObservedAtMs: eligibilityAt, blockhashObservedAtMs: checkedAt, inputBalanceRaw: balance.toString(), gasBalanceLamports: String(player.lamports), requiredGasLamports: requiredGas.toString(), eligible: true };
+    return { operationHash: digest(o), quoteId: q.quoteId, messageHash: decoded.messageHash, genesisHash: p.expectedGenesis, balanceObservedAtMs: chain.observedAt, eligibilityObservedAtMs: eligibilityAt, blockhashObservedAtMs: checkedAt, inputBalanceRaw: balance.toString(), outputBalanceRaw: outputBalance.toString(), gasBalanceLamports: String(player.lamports), requiredGasLamports: requiredGas.toString(), eligible: true };
+  }
+  async function selectBuildBlockhash() {
+    approval(); await genesis();
+    const latest = withContext(await rpc.call("getLatestBlockhash", [config()])), value = record(latest.value);
+    const blockhash = encode58(decode58(value.blockhash as string, 32));
+    const lastValidBlockHeight = integer(value.lastValidBlockHeight, 1, Number.MAX_SAFE_INTEGER);
+    return { blockhash, lastValidBlockHeight };
+  }
+  async function buildAt(o: Readonly<Operation>, q: Readonly<Quote>, t: Readonly<VerifiedTarget>,
+    selected?: Awaited<ReturnType<typeof selectBuildBlockhash>>): Promise<string> {
+    approval(); targetMatches(t);
+    const at = now(); for (const [key, b] of builds) if (at - b.createdAt > 120000) builds.delete(key);
+    if (builds.size >= 8) throw new Error("REFERENCE_BUILD_CACHE_LIMIT");
+    const { blockhash, lastValidBlockHeight } = selected ?? await selectBuildBlockhash();
+    const encoded = compileLegacy(o.playerPublicKey, p.poster, blockhash, benchPlan(p, o, q).instructions), decoded = decodeLegacy(encoded);
+    if (builds.has(decoded.messageHash)) throw new Error("REFERENCE_BUILD_ALREADY_EXISTS");
+    builds.set(decoded.messageHash, { operation: freeze(structuredClone(o)), quote: freeze(structuredClone(q)), blockhash, lastValidBlockHeight, createdAt: now(), checked: false });
+    return encoded;
   }
   const ports: OperatorPorts = {
     verifyTarget: async () => { await snapshot(); return target(); },
     assertTargetCurrent: () => { approval(); },
-    build: async (o, q, t) => {
-      approval(); targetMatches(t); await genesis();
-      const at = now(); for (const [key, b] of builds) if (at - b.createdAt > 120000) builds.delete(key);
-      if (builds.size >= 8) throw new Error("REFERENCE_BUILD_CACHE_LIMIT");
-      const latest = withContext(await rpc.call("getLatestBlockhash", [config()])), value = record(latest.value);
-      const blockhash = encode58(decode58(value.blockhash as string, 32)), lastValidBlockHeight = integer(value.lastValidBlockHeight, 1, Number.MAX_SAFE_INTEGER);
-      const encoded = compileLegacy(o.playerPublicKey, p.poster, blockhash, benchPlan(p, o, q).instructions), decoded = decodeLegacy(encoded);
-      if (builds.has(decoded.messageHash)) throw new Error("REFERENCE_BUILD_ALREADY_EXISTS");
-      builds.set(decoded.messageHash, { operation: freeze(structuredClone(o)), quote: freeze(structuredClone(q)), blockhash, lastValidBlockHeight, createdAt: now(), checked: false });
-      return encoded;
-    },
+    build: (o, q, t) => buildAt(o, q, t),
     verifyPlan, revalidate: verifyPlan,
     sign: async encoded => {
       approval(); const before = decodeLegacy(encoded), built = builds.get(before.messageHash);
-      if (!built?.checked) throw new Error("UNVERIFIED_REFERENCE_WALLET");
+      if (!built?.checked || built.restored) throw new Error("UNVERIFIED_REFERENCE_WALLET");
       let publicKey: string; try { publicKey = await wallet.publicKey(); } catch { throw new Error("REFERENCE_WALLET_UNAVAILABLE"); }
       if (publicKey !== built.operation.playerPublicKey) throw new Error("UNVERIFIED_REFERENCE_WALLET");
       verifyBenchMessage(encoded, p, built.operation, built.quote);
@@ -168,9 +302,10 @@ export function createReferenceAdapters(options: { profile: BenchProfile; client
       return { transaction: signed, signature: encode58(after.signatures[0]!) };
     },
   };
-  async function verifyFinal(saved: Readonly<Submission>, expected: Readonly<{ genesisHash: string; origin: string }>): Promise<FinalEvidence> {
+  async function verifyFinal(saved: Readonly<Submission>, expected: Readonly<{ genesisHash: string; origin: string; apiBasePath?: "/api" }>): Promise<FinalEvidence> {
     try {
-      if (expected.genesisHash !== p.expectedGenesis || expected.origin !== p.apiOrigin || saved.txid !== saved.playerSignature) return { status: "unknown" };
+      if (expected.genesisHash !== p.expectedGenesis || expected.origin !== p.apiOrigin ||
+          expected.apiBasePath !== p.apiBasePath || saved.txid !== saved.playerSignature) return { status: "unknown" };
       decode58(saved.txid, 64); await genesis();
       const status = withContext(await rpc.call("getSignatureStatuses", [[saved.txid], { searchTransactionHistory: true }]));
       if (!Array.isArray(status.value) || status.value.length !== 1 || status.value[0] === null) return { status: "unknown" };
@@ -184,9 +319,55 @@ export function createReferenceAdapters(options: { profile: BenchProfile; client
       if (err !== finalError(s.err, decoded.instructions.length, decoded.accounts.length)) return { status: "unknown" };
       const outcome = err === "null" ? "confirmed" : "failed";
       if (decoded.messageHash !== saved.messageHash || decoded.accounts[0]?.address !== saved.playerPublicKey || encode58(decoded.signatures[0]!) !== saved.txid || !verifyEd25519(decoded.message, decoded.signatures[0]!, saved.playerPublicKey) || !verifyEd25519(decoded.message, decoded.signatures[1]!, decoded.accounts[1]!.address)) return { status: "unknown" };
+      if (outcome === "confirmed" && p.apiBasePath === "/api") verifyOfficialFinalizedBalances(p, saved, decoded, meta);
       await genesis();
       return { status: outcome, commitment: "finalized", genesisHash: p.expectedGenesis, txid: saved.txid };
     } catch { return { status: "unknown" }; }
   }
-  return { ports, verifyFinal };
+  async function readSpotHoldings(player: string, assetMainnet: string) {
+    const asset = p.mappings.find(mapping => mapping.mainnet === assetMainnet);
+    if (!asset || asset.mainnet === p.usdcMainnet) throw new Error("UNVERIFIED_SPOT_PAIR");
+    const usdcAccount = associatedAddress(player, usdc!.devnet);
+    const assetAccount = associatedAddress(player, asset.devnet);
+    const { map, observedAt } = await snapshot([usdcAccount, assetAccount]);
+    const assetBalance = map.get(assetAccount);
+    return {
+      observedAtMs: observedAt,
+      usdcRaw: token(map.get(usdcAccount), usdc!.devnet, player).toString(),
+      assetRaw: assetBalance === null ? "0" : token(assetBalance, asset.devnet, player).toString(),
+    };
+  }
+  const recovery: NonNullable<OperatorPorts["recovery"]> = {
+    target,
+    async expired(transaction, operation, quote, build) {
+      const { decoded } = verifyBenchMessage(transaction, p, operation, quote, true);
+      await genesis();
+      const height = integer(await rpc.call("getBlockHeight", [config()]), 0, Number.MAX_SAFE_INTEGER);
+      if (height <= build.lastValidBlockHeight) return false;
+      const valid = withContext(await rpc.call("isBlockhashValid", [decoded.blockhash, config()]));
+      await genesis();
+      return valid.value === false;
+    },
+    capture(messageHash) {
+      const built = builds.get(messageHash);
+      if (!built?.checked) throw new Error("UNKNOWN_REFERENCE_BUILD");
+      return { createdAt: built.createdAt, lastValidBlockHeight: built.lastValidBlockHeight };
+    },
+    restore(transaction, operation, quote, verifiedTarget, build) {
+      approval(); targetMatches(verifiedTarget);
+      const { decoded } = verifyBenchMessage(transaction, p, operation, quote);
+      const current = builds.get(decoded.messageHash);
+      if (current && (digest(current.operation) !== digest(operation) || digest(current.quote) !== digest(quote) ||
+          current.createdAt !== build.createdAt || current.lastValidBlockHeight !== build.lastValidBlockHeight)) {
+        throw new Error("REFERENCE_RECOVERY_BUILD_MISMATCH");
+      }
+      if (current) {
+        current.restored = true;
+      } else {
+        if (builds.size >= 8) throw new Error("REFERENCE_BUILD_CACHE_LIMIT");
+        builds.set(decoded.messageHash, { operation, quote, blockhash: decoded.blockhash, ...build, checked: false, restored: true });
+      }
+    },
+  };
+  return { ports, verifyFinal, readSpotHoldings, recovery, selectBuildBlockhash, buildAt };
 }

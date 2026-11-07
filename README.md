@@ -1,8 +1,8 @@
 # AudaceFi Integration Kit
 
-TypeScript source integration for **AI agents and trading bots**. Version 1.0.0; local synthetic qualification. This repository supplies connection code, not a hosted service or a qualified live deployment.
+TypeScript source integration for **AI agents and trading bots**, version 1.1.0. The offline preview runs immediately after setup. Official ranked operation requires a separately qualified AudaceFi deployment and release package.
 
-A TypeScript integration client for operators connecting an existing **AI agent** or **trading bot** to AudaceFi. Both use the same API, state checks, durable input budgets, intention/quote/signature/submission ordering and reconciliation. The starter includes the callable connection code and local synthetic demonstrations. A deployment, an API key, a wallet signer, a model and a trading strategy are supplied and qualified by the operator; none is provisioned or run by installation.
+A TypeScript integration client for operators connecting an existing **AI agent** or **trading bot** to AudaceFi. Both use the same API, state checks, durable input budgets, intention/quote/signature/submission ordering and reconciliation. The kit includes callable connection code and local synthetic demonstrations. Operators configure their individual API key, their wallet signer and their own strategy. For the official target, AudaceFi supplies the deployment profile and issuer trust information through a separate release process. That package and its approval channel are pending.
 
 **AudaceFi onboarding is mandatory before any real connection. Each operator must complete onboarding on AudaceFi to obtain an individual API key for its own account, whether it operates an AI agent or a trading bot.** The starter does not register an account, issue a key or provide a shared key. Cloning, installing or running the local synthetic examples grants no API access; those examples need no account or key.
 
@@ -15,6 +15,7 @@ A TypeScript integration client for operators connecting an existing **AI agent*
 - A bounded, read-only Solana RPC client with a separately supplied endpoint and optional RPC credential. It never submits a transaction.
 - Original deterministic offline replay and synthetic scenarios, plus local-only connected lifecycle and failure tests.
 - [Off-chain signal adapter](docs/SIGNAL-PILOT.md) with a language-independent JSON Lines input, an offline CLI, and a Python example for a synthetic `long` then `flat` on one spot pair.
+- Ranked signal gateway code for JSON Lines or local HTTP, with explicit source-instrument mapping and receipt checks for a qualified Crypto Bro deployment. [Operator guide](docs/OPERATOR-SIGNALS.md)
 - [Connection guide](docs/CONNECTING.md), [reference adapter](docs/REFERENCE.md), [operator guide](docs/OPERATORS.md), [wire contract](docs/CONTRACT.md), [OpenAPI](contract/openapi.json) and [support](docs/SUPPORT.md).
 
 ## Install and verify locally
@@ -30,7 +31,7 @@ npm run demo:bot
 npm run demo:agent
 ```
 
-Installation contacts the package registry. Tests, demos and build perform no AudaceFi, model, exchange, wallet or RPC requests. The full check runs types, tests, build, content review and UTF-8/text hygiene. The last two commands remain synthetic replay examples: bot gives BUY, SELL, HOLD, HOLD; agent consumes authored JSON and gives BUY, BUY, HOLD, HOLD. Each permits two hypothetical proposals, then reports `PROPOSAL_BUDGET_EXHAUSTED`, `synthetic: true`, `executionAuthorized: false`. No funds are spent. The replay is not a model or a backtest.
+Installation contacts the package registry. Tests, demos and build perform no AudaceFi, model, exchange, wallet or RPC requests. The full check runs types, tests, build, content review and UTF-8/text hygiene. Run it from a Git checkout so the content audit can inspect tracked files. The last two commands remain synthetic replay examples: bot gives BUY, SELL, HOLD, HOLD; agent consumes authored JSON and gives BUY, BUY, HOLD, HOLD. Each permits two hypothetical proposals, then reports `PROPOSAL_BUDGET_EXHAUSTED`, `synthetic: true`, `executionAuthorized: false`. No funds are spent. The replay is not a model or a backtest.
 
 For negative cases, `npm run replay -- --scenario stale` and `npm run replay -- --scenario unavailable --strategy hold` return HOLD only. For the callable connected flow, start with [CONNECTING](docs/CONNECTING.md); running the quickstart never starts it.
 
@@ -40,7 +41,7 @@ After installing dependencies, build the kit and pipe the Python example into th
 
 ```sh
 npm run build
-python examples/signal-pilot.py | npm run --silent signal:preview
+python3 examples/signal-pilot.py | npm run --silent signal:preview
 ```
 
 The preview runs offline on one synthetic spot pair. It accepts JSON Lines from any language and demonstrates entering a position with `long` and closing it with `flat`. It requires no AudaceFi account, API key or wallet. The [signal adapter guide](docs/SIGNAL-PILOT.md) defines the input format and how to supply your own signal.
@@ -78,7 +79,7 @@ export async function connectAgent(args: ConnectionInput) {
 }
 ```
 
-These functions can cause remote writes when deliberately called with real arguments. Do not call them during local qualification. The shipped tests demonstrate the same functions through an injected transport, with no external connection. Constructor/import has no I/O and writes are refused unless explicitly enabled. There is no live CLI command, scheduler, polling loop, credential loader or automatic startup.
+These functions can cause remote writes when deliberately called with real arguments. Do not call them during local qualification. The shipped tests use injected transports. Importing the library has no I/O. The ranked validation CLI requires an explicit command and a separately reviewed operator module. Writes require explicit authorization.
 
 ## Qualification and boundaries
 
@@ -86,7 +87,7 @@ The API contract was checked against local source; the connected lifecycle is ex
 
 `RECORDED`, `SUBMITTED` and `UNKNOWN` are not chain confirmations. Write timeouts after transmission, malformed write replies and lost responses remain ambiguous. Reconciliation uses the exact original intention/signature; a null lookup does not authorize resubmission or a fresh key. The operator's finality verifier must identify the same transaction and pinned genesis before a final result can be recorded. Read [recovery](docs/RECOVERY.md).
 
-The reference adapter implements the ports for a narrow, source-reviewed protocol profile; custom ports remain possible and require their own review. Profile pins and API deployment approval are supplied by the operator: equality with supplied values does not prove that a network is devnet or that the approved server implements the durable routes. Actual deployment/provider/wallet qualification remains necessary. This is a trusted-code integration boundary: never feed model-generated code, endpoints, credentials or transaction bytes into it. Maintainers review the exact revision and [assurance boundaries](docs/AUDITS.md) before distribution or changes to access. Every real integration still needs its own deployment, provider and wallet qualification.
+The reference adapter implements the ports for a narrow, source-reviewed protocol profile. Official activation depends on the AudaceFi deployment profile, issuer trust information and an active signed approval. Until the release package and issuance channel are available, use the offline preview. On a qualified deployment, AudaceFi reports the provisional rank and valuation time through its authenticated account API. The kit checks the exact receipt context and verifies Solana finality separately. Qualify custom ports and deployments separately. Keep code, endpoints, credentials and transaction bytes within your reviewed operator configuration. [Operator guide](docs/OPERATOR-SIGNALS.md) · [Assurance boundaries](docs/AUDITS.md)
 
 ## License
 

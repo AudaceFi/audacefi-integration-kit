@@ -200,6 +200,7 @@ test("runtime network defenses block before any real request", async () => {
 });
 test("capability inventory keeps networking in the explicit client, outside the offline CLI", () => {
   const allowed = new Set([
+    "node:async_hooks",
     "node:crypto",
     "node:fs",
     "node:url",
@@ -218,21 +219,34 @@ test("capability inventory keeps networking in the explicit client, outside the 
     "./bench.ts",
     "./reference.ts",
     "./signals.ts",
+    "./ranked-signal.ts",
+    "./ranked-proof.ts",
+    "./ranked-inbox.ts",
+    "./official-approval.ts",
   ]);
   for (const name of readdirSync(new URL("../src/", import.meta.url))) {
     const source = readFileSync(
       new URL("../src/" + name, import.meta.url),
       "utf8",
     );
-    for (const specifier of inventoryImports(source))
+    const rankedCli = name === "ranked-signal-cli.ts";
+    const imports = inventoryImports(source, rankedCli);
+    for (const specifier of imports)
       assert.ok(allowed.has(specifier), name + ":" + specifier);
+    if (imports.includes("node:async_hooks")) assert.equal(name, "ranked-signal.ts");
+    if (imports.includes("./official-approval.ts")) assert.ok(name === "index.ts" || name === "ranked-signal.ts");
+    if (name === "official-approval.ts") assert.deepEqual(imports, ["./canonical.ts", "./contract.ts", "./solana.ts"]);
     assert.doesNotMatch(
       source,
-      /process\.env|\bimport\s*\(|\beval\s*\(|\brequire\s*\(/,
+      /process\.env|\beval\s*\(|\brequire\s*\(/,
     );
+    if (name === "ranked-inbox.ts") {
+      assert.equal((source.match(/\bgetBuiltinModule\b/g) ?? []).length, 1);
+      assert.equal((source.match(/getBuiltinModule\("node:sqlite"\)/g) ?? []).length, 1);
+    } else assert.doesNotMatch(source, /\bgetBuiltinModule\b/);
     if (name !== "client.ts" && name !== "rpc.ts") assert.doesNotMatch(source, /\bfetch\s*\(/);
     else assert.equal((source.match(/globalThis[.]fetch\s*\(/g) ?? []).length, 1);
-    if (name !== "journal.ts") assert.equal(inventoryImports(source).includes("node:fs/promises"), false);
+    if (name !== "journal.ts" && name !== "ranked-inbox.ts") assert.equal(imports.includes("node:fs/promises"), false);
   }
   const cli = readFileSync(new URL("../src/cli.ts", import.meta.url),"utf8");
   assert.deepEqual(inventoryImports(cli).filter(x=>x.startsWith("./")),["./replay.ts"]);
@@ -276,8 +290,8 @@ test("OpenAPI and JSONSchema describe the same projection and every required fie
     assert.throws(() => parseReadState(state), name);
   }
   assert.deepEqual(Object.keys(spec.paths).sort(),[
-    "/v1/me/state", "/v1/me/allowlist", "/v1/swap-intents", "/v1/swap-intents/{id}/quote",
+    "/v1/me", "/v1/me/state", "/v1/me/allowlist", "/v1/swap-intents", "/v1/swap-intents/{id}/quote",
     "/v1/swap-intents/{id}/signature", "/v1/swap-intents/{id}/submit-durable",
-    "/v1/swap-intents/{id}/submission", "/v1/swap-intents/{id}/result",
+    "/v1/swap-intents/{id}/submission", "/v1/swap-intents/{id}/ranked-evidence", "/v1/swap-intents/{id}/result",
   ].sort());
 });

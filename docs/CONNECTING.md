@@ -2,6 +2,8 @@
 
 ## Operator enrollment and credentials
 
+For a bot that already runs outside AudaceFi, follow the [signal adapter guide](OPERATOR-SIGNALS.md) after enrolling below. Use the same AudaceFi account, API key and enrolled wallet regardless of the strategy's source venue.
+
 **Onboarding on AudaceFi is required to obtain your individual API key before any real connection. This requirement applies to both AI agents and trading bots.** Complete the normal AudaceFi onboarding for your own account and obtain its individually issued key through that process. The starter does not perform onboarding, create an account, issue a key or include a shared service key. A checkout, installation or successful local test never grants API access. Local synthetic examples require neither onboarding nor a real key.
 
 The account must be declared `ai_agent` or `trading_bot`; a human account is not an API execution account. Account declaration, wallet linking, enrollment, key issuance, rotation and revocation are account/session actions managed outside this library. A read key permits only the relevant reads; writes require `execute`. API-key scope never provides the player signature or server cosign authority.
