@@ -1,8 +1,10 @@
 import { mint, rawAmount, uuid } from "./client.ts";
-import { closed, integer, timestamp } from "./contract.ts";
+import { closed, integer, isRankedCategory, timestamp, type RankedCategory } from "./contract.ts";
 import type { FileJournal } from "./journal.ts";
 import type { Operation } from "./operation.ts";
 import { decode58 } from "./solana.ts";
+
+export { isRankedCategory, type RankedCategory } from "./contract.ts";
 
 export interface RankedOperationContext {
   operationKey: string;
@@ -12,7 +14,7 @@ export interface RankedOperationContext {
   seasonId: string;
   accountId: string;
   actor: Operation["actor"];
-  category: "crypto-bro";
+  category: RankedCategory;
   playerPublicKey: string;
 }
 
@@ -32,7 +34,7 @@ export interface RankedEvidence {
   leaderboard: {
     seasonId: string;
     accountId: string;
-    category: "crypto-bro";
+    category: RankedCategory;
     division: "A" | "B" | "C";
     rank: number;
     asOf: string;
@@ -67,7 +69,7 @@ export async function verifyRankedOperation({
   uuid(accountId);
   mint(playerPublicKey);
   mint(usdcMint);
-  if (category !== "crypto-bro" || (actor !== "trading_bot" && actor !== "ai_agent")) {
+  if (!isRankedCategory(category) || (actor !== "trading_bot" && actor !== "ai_agent")) {
     throw new Error("INVALID_RANKING_CONTEXT");
   }
 

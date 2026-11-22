@@ -24,6 +24,7 @@
     "id": { "type": "string", "format": "uuid" },
     "signature": { "type": "string", "pattern": "^[1-9A-HJ-NP-Za-km-z]{64,88}$" },
     "amount": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" },
+    "category": { "enum": ["crypto-bro", "degen"] },
     "trade": {
       "type": "object",
       "required": [
@@ -36,7 +37,7 @@
         "seasonId": { "$ref": "#/$defs/id" },
         "accountId": { "$ref": "#/$defs/id" },
         "actor": { "enum": ["trading_bot", "ai_agent"] },
-        "category": { "const": "crypto-bro" },
+        "category": { "$ref": "#/$defs/category" },
         "playerPublicKey": { "type": "string", "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$" },
         "intentId": { "$ref": "#/$defs/id" },
         "txid": { "$ref": "#/$defs/signature" },
@@ -52,7 +53,7 @@
       "properties": {
         "seasonId": { "$ref": "#/$defs/id" },
         "accountId": { "$ref": "#/$defs/id" },
-        "category": { "const": "crypto-bro" },
+        "category": { "$ref": "#/$defs/category" },
         "division": { "enum": ["A", "B", "C"] },
         "rank": { "type": "integer", "minimum": 1, "maximum": 1000000000000 },
         "asOf": {

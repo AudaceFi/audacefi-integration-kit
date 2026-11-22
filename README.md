@@ -15,7 +15,7 @@ A TypeScript integration client for operators connecting an existing **AI agent*
 - A bounded, read-only Solana RPC client with a separately supplied endpoint and optional RPC credential. It never submits a transaction.
 - Original deterministic offline replay and synthetic scenarios, plus local-only connected lifecycle and failure tests.
 - [Off-chain signal adapter](docs/SIGNAL-PILOT.md) with a language-independent JSON Lines input, an offline CLI, and a Python example for a synthetic `long` then `flat` on one spot pair.
-- Ranked signal gateway code for JSON Lines or local HTTP, with explicit source-instrument mapping and receipt checks for a qualified Crypto Bro deployment. [Operator guide](docs/OPERATOR-SIGNALS.md)
+- Ranked signal gateway code for JSON Lines or local HTTP, with explicit source-instrument mapping and receipt checks for qualified Crypto Bro and Degen deployments. Each gateway uses one category and one eligible spot pair. [Operator guide](docs/OPERATOR-SIGNALS.md)
 - [Connection guide](docs/CONNECTING.md), [reference adapter](docs/REFERENCE.md), [operator guide](docs/OPERATORS.md), [wire contract](docs/CONTRACT.md), [OpenAPI](contract/openapi.json) and [support](docs/SUPPORT.md).
 
 ## Install and verify locally
@@ -45,6 +45,8 @@ python3 examples/signal-pilot.py | npm run --silent signal:preview
 ```
 
 The preview runs offline on one synthetic spot pair. It accepts JSON Lines from any language and demonstrates entering a position with `long` and closing it with `flat`. It requires no AudaceFi account, API key or wallet. The [signal adapter guide](docs/SIGNAL-PILOT.md) defines the input format and how to supply your own signal.
+
+The preview uses the Degen policy with the synthetic `TEST`/USDC pair. To set up a Degen validation run with an eligible pair, follow the [isolated validation guide](docs/ADAPTER.md).
 
 ## Integrate either operator
 

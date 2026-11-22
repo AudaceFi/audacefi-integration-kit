@@ -18,8 +18,8 @@ const buy = { amountInRaw: "1000000", amountOutRaw: "499000", feeRaw: "2000" };
 const sell = { amountInRaw: "499000", amountOutRaw: "996004", feeRaw: "1996" };
 const postLifecycle = ["swap-intents", "quote", "signature", "submit-durable", "result"];
 
-async function rankedFixture(t: TestContext, recoveryExit?: RankedSignalSetup["pair"]["recoveryExit"]) {
-  const h = referenceHarness();
+async function rankedFixture(t: TestContext, recoveryExit?: RankedSignalSetup["pair"]["recoveryExit"], category?: RankedSignalSetup["category"]) {
+  const h = referenceHarness("buy", "trading_bot", "root", category);
   const now = Date.now();
   h.setNow(now);
   Object.assign(h.state.season.active, {
@@ -59,6 +59,7 @@ async function rankedFixture(t: TestContext, recoveryExit?: RankedSignalSetup["p
     if (body) writes.push({ path: target.pathname, body });
     if (target.pathname === "/v1/me/state" && controls.stateFailure) return new Response(null, { status: 503 });
     if (target.pathname === "/v1/me/allowlist") {
+      assert.equal(target.searchParams.get("category"), (category ?? "crypto-bro").replace("-", "_"));
       h.calls.push({ path: target.pathname, method, body: null });
       return Response.json(h.allowlist);
     }
@@ -120,6 +121,7 @@ async function rankedFixture(t: TestContext, recoveryExit?: RankedSignalSetup["p
     journalDirectory: directory,
     journalPolicy,
     actor: "trading_bot",
+    ...(category ? { category } : {}),
     accountId: syntheticId(20),
     seasonId: h.operation.seasonId,
     playerPublicKey,
@@ -128,6 +130,7 @@ async function rankedFixture(t: TestContext, recoveryExit?: RankedSignalSetup["p
       ...(recoveryExit ? { recoveryExit } : {}) },
     assertValidationTarget: async () => { controls.preflights++; },
     readEvidence: async (request) => {
+      assert.equal(request.category, category ?? "crypto-bro");
       if (controls.proofPending) return null;
       const fill = fills.get(request.intentId);
       assert.ok(fill);
@@ -170,6 +173,7 @@ test("ranked readiness scope stays stable and binds the actual gateway and journ
   assert.equal((await openRankedSignalOperator({ ...setup, profile: refreshed }, "validation")).runScope, runScope);
   for (const changes of [
     { accountId: syntheticId(21) },
+    { category: "degen" as const },
     { seasonId: syntheticId(22) },
     { playerPublicKey: asset(9) },
     { profile: { ...setup.profile, programDataSha256: "0".repeat(64) } },
@@ -186,6 +190,27 @@ test("ranked readiness scope stays stable and binds the actual gateway and journ
   await assert.rejects(accept(signal("long", 1)), /RANKED_RUN_SCOPE_CHANGED/);
   assert.deepEqual(h.calls, []);
   assert.equal(controls.preflights, 0);
+});
+
+test("Degen long then flat uses Degen eligibility, intents, and ranked evidence", async (t) => {
+  const { h, setup, open, signal, prepareSell, holdings, writes } = await rankedFixture(t, undefined, "degen");
+  const gateway = await open();
+  const long = signal("long", 1);
+  h.allowlist.category = "crypto_bro";
+  await assert.rejects(gateway(long), /ALLOWLIST_CONTEXT_MISMATCH/);
+  assert.equal(writes.length, 0);
+  h.allowlist.category = "degen";
+  const entered = await gateway(long);
+  assert.equal(entered.ranked, true);
+  assert.equal(entered.positionAfterRaw, buy.amountOutRaw);
+  const cryptoBro = await openRankedSignalOperator({ ...setup, category: "crypto-bro" }, "validation");
+  await assert.rejects(cryptoBro.accept(signal("flat", 2)), /RANKED_INBOX_SCOPE_CHANGED/);
+  prepareSell();
+  const exited = await gateway(signal("flat", 2));
+  assert.equal(exited.ranked, true);
+  assert.equal(exited.positionAfterRaw, "0");
+  assert.deepEqual(holdings(), [4_996_004n, 0n]);
+  assert.deepEqual(writes.filter(({ path }) => path === "/v1/swap-intents").map(({ body }) => body.category), ["degen", "degen"]);
 });
 
 test("ranked CLI emits optional ready scope and refuses unscoped or wrong-scope signals before admission", async (t) => {
@@ -712,6 +737,14 @@ test("official proxy binds the current release and resumes the same signed flat 
   assert.deepEqual(traces, []);
 
   blocked = false;
+  const { directory: degenJournal } = await journalFor(t, official.journalPolicy);
+  const degen = { ...official, category: "degen" as const, journalDirectory: degenJournal };
+  assert.notEqual(officialRankedApprovalBindings(degen).scopeDigest, officialRankedApprovalBindings(official).scopeDigest);
+  assert.deepEqual(officialRankedApprovalBindings({ ...official, category: "crypto-bro" }), officialRankedApprovalBindings(official));
+  assert.throws(() => officialRankedApprovalBindings({ ...official, category: "whale" as "degen" }), /INVALID_RANKED_CATEGORY/);
+  const wrongCategory = await openRankedSignalOperator(degen, "official");
+  await assert.rejects(wrongCategory.accept(signal("long", 1)), /OFFICIAL_APPROVAL/);
+  assert.deepEqual(traces, []);
   const long = signal("long", 1);
   credentialScopes = ["read"];
   await assert.rejects(accept(long), /EXECUTE_SCOPE_REQUIRED/);

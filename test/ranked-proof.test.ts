@@ -107,12 +107,12 @@ test("rejects mismatched trade and leaderboard fields and aggregate-only evidenc
   assert.equal(await finalize("confirmed"), "confirmed");
   const invalidTradeFields = {
     operationKey: "synthetic-operation-two", origin: "https://different.synthetic.invalid", genesisHash: asset(9),
-    seasonId: syntheticId(91), accountId: syntheticId(92), actor: "ai_agent", category: "whale",
+    seasonId: syntheticId(91), accountId: syntheticId(92), actor: "ai_agent", category: "degen",
     playerPublicKey: asset(10), intentId: syntheticId(93), txid: "other-txid",
     amountInRaw: "999999", amountOutRaw: "0", feeRaw: "-1",
   };
   const invalidRowFields = {
-    seasonId: syntheticId(91), accountId: syntheticId(92), category: "whale", division: "D", rank: 0,
+    seasonId: syntheticId(91), accountId: syntheticId(92), category: "degen", division: "D", rank: 0,
     asOf: "yesterday", includedIntentId: syntheticId(93), includedTxid: "other-txid",
   };
   for (const [component, changes] of [["trade", invalidTradeFields], ["leaderboard", invalidRowFields]] as const) {

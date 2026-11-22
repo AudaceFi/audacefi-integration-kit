@@ -25,13 +25,14 @@ export async function journalFor(t:TestContext,policy:JournalPolicy={maxOperatio
   t.after(async()=>{assert.ok(resolve(directory).startsWith(resolve(tmpdir())+sep+"audacefi-starter-connected-"));await rm(directory,{recursive:true,force:true});});
   return {directory,journal:await FileJournal.create(directory,policy)};
 }
-export function harness(actor:Operation["actor"]="trading_bot") {
+export function harness(actor:Operation["actor"]="trading_bot",category:Operation["category"]="crypto-bro") {
   const pair=generateKeyPairSync("ed25519");
   const payer=Buffer.from(pair.publicKey.export({type:"spki",format:"der"})).subarray(-32);
   const player=encode58(payer),program=asset(7);
-  const operation:Operation={actor,operationKey:"synthetic-operation-one",seasonId:syntheticId(1),category:"crypto-bro",playerPublicKey:player,tokenInMint:asset(1),tokenOutMint:asset(2),amountIn:1,amountInRaw:"1000000",inputDecimals:6};
+  const operation:Operation={actor,operationKey:"synthetic-operation-one",seasonId:syntheticId(1),category,playerPublicKey:player,tokenInMint:asset(1),tokenOutMint:asset(2),amountIn:1,amountInRaw:"1000000",inputDecimals:6};
   const state=frame().state;
   state.season.active.id=operation.seasonId;state.wallet.seasonId=operation.seasonId;state.wallet.walletAddress=player;
+  state.category=category;state.wallet.category=category.replace("-","_");
   const target:VerifiedTarget={network:"devnet",expectedGenesis:asset(8),observedGenesis:asset(8),durableProtocol:"audacefi.bench.submission.v1",usdcMainnet:asset(1),allowedPrograms:[program],mappings:[{mainnet:asset(1),devnet:asset(3),decimals:6},{mainnet:asset(2),devnet:asset(4),decimals:6}]};
   const quote={intentId:syntheticId(2),quoteId:syntheticId(3),mintMainnet:asset(2),mintDevnet:asset(4),direction:"buy",amountInRaw:operation.amountInRaw,price:"1",expo:0,priceUsd:1,expiresAt:new Date(clock+60000).toISOString(),ttlSeconds:60};
   const calls:{path:string;method:string;body:any}[]=[];
@@ -46,7 +47,7 @@ export function harness(actor:Operation["actor"]="trading_bot") {
     calls.push({path,method,body});
     if(faults.rejectPath && path.endsWith(faults.rejectPath))return json({message:"private-body-not-retained"},503);
     if(path==="/v1/me/state"){const v=structuredClone(state);faults.stateEdit?.(v);return json(v);}
-    if(path==="/v1/swap-intents"){assert.equal(body.category,"crypto_bro");assert.equal(body.surface,"api");return json({intentId:quote.intentId,status:"built",replayed:false});}
+    if(path==="/v1/swap-intents"){assert.equal(body.category,category.replace("-","_"));assert.equal(body.surface,"api");return json({intentId:quote.intentId,status:"built",replayed:false});}
     if(path.endsWith("/quote")){const v=structuredClone(quote);faults.quoteEdit?.(v);return json(v);}
     const intentId = path.split("/").at(-2)!;
     if(path.endsWith("/signature")){signatures.set(intentId,body.signature);return json({intentId,status:"signed"});}

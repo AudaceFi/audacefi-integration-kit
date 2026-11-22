@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { benchPlan, type BenchProfile } from "./bench.ts";
 import { digest } from "./canonical.ts";
 import { AudaceFiClient, mint, rawAmount, uuid, type OfficialProxyOptions, type RequestGuard } from "./client.ts";
-import { integer, SOLANA_DEVNET_GENESIS } from "./contract.ts";
+import { integer, isRankedCategory, SOLANA_DEVNET_GENESIS, type RankedCategory } from "./contract.ts";
 import { FileJournal, type JournalPolicy } from "./journal.ts";
 import { createOfficialOperationGuard, officialApprovalDeploymentDigest,
   type OfficialApprovalBindings, type OfficialApprovalEvidence, type OfficialApprovalSource } from "./official-approval.ts";
@@ -17,7 +17,11 @@ import { parseSpotSignal, prepareSpotSignalFromJournal, type SpotSignalPolicy } 
 
 export { SOLANA_DEVNET_GENESIS } from "./contract.ts";
 const validationOrigin = "https://audacefi-ranked-validation.invalid";
-const category = "crypto-bro";
+function rankedSignalCategory(value: unknown): RankedCategory {
+  if (value === undefined) return "crypto-bro";
+  if (!isRankedCategory(value)) throw new Error("INVALID_RANKED_CATEGORY");
+  return value;
+}
 
 export interface RankedSignalSetup {
   client: AudaceFiClient;
@@ -27,6 +31,8 @@ export interface RankedSignalSetup {
   journalDirectory: string;
   journalPolicy: JournalPolicy;
   actor: Operation["actor"];
+  /** Omitted setups keep the Crypto Bro category used in v1.1.0. */
+  category?: RankedCategory;
   accountId: string;
   seasonId: string;
   playerPublicKey: string;
@@ -50,12 +56,15 @@ export type OfficialRankedSignalSetup = Omit<RankedSignalSetup, "client" | "asse
 export function officialRankedApprovalBindings(setup: OfficialRankedSignalSetup): OfficialApprovalBindings {
   const { apiApproval, ...profile } = setup.profile;
   const { actor, accountId, seasonId, playerPublicKey, source, pair, journalPolicy } = setup;
+  const category = rankedSignalCategory(setup.category);
   const deploymentDigest = officialApprovalDeploymentDigest(setup.officialApproval.expectedEvidence);
   if (deploymentDigest !== setup.officialApproval.deploymentDigest) throw new Error("OFFICIAL_APPROVAL_DEPLOYMENT_MISMATCH");
   return {
     deploymentDigest,
     profileDigest: digest({ ...profile, protocol: apiApproval.protocol }),
-    scopeDigest: digest({ actor, accountId, seasonId, playerPublicKey, source, pair, journalPolicy }),
+    // Keep the v1.1.0 binding for Crypto Bro. Degen requires its own signed scope.
+    scopeDigest: digest({ actor, accountId, seasonId, playerPublicKey, source, pair, journalPolicy,
+      ...(category === "degen" ? { category } : {}) }),
   };
 }
 
@@ -88,13 +97,14 @@ export async function createOfficialRankedSignalGateway(setup: OfficialRankedSig
 async function createOfficialScopedRankedSignalGateway(setup: OfficialRankedSignalSetup) {
   if (!setup.pair?.recoveryExit) throw new Error("OFFICIAL_RECOVERY_EXIT_REQUIRED");
   const { accountId, actor, assertOfficialTarget, wallet } = setup;
+  const category = rankedSignalCategory(setup.category);
   const source = setup.officialApproval;
   if (!source || typeof source.read !== "function" || typeof source.isCurrent !== "function" ||
       typeof assertOfficialTarget !== "function") {
     throw new Error("OFFICIAL_APPROVAL_REQUIRED");
   }
   const approval = { ...source, expectedEvidence: Object.freeze(structuredClone(source.expectedEvidence)) };
-  const bindings = officialRankedApprovalBindings(setup);
+  const bindings = officialRankedApprovalBindings({ ...setup, category });
   const { frozenAllowlistDigest, openingSnapshotDigest } = approval.expectedEvidence;
   const referenceWindow = { ...setup.profile.apiApproval };
   const guards = new AsyncLocalStorage<() => Promise<void>>();
@@ -107,7 +117,7 @@ async function createOfficialScopedRankedSignalGateway(setup: OfficialRankedSign
     ...setup.api, accountId, actor, authorizeWrite: assertTarget,
   });
   const gateway = await createScopedRankedSignalGateway({
-    ...setup, accountId, actor, client, readEvidence: request => client.readRankedEvidence(request),
+    ...setup, accountId, actor, category, client, readEvidence: request => client.readRankedEvidence(request),
     wallet: { publicKey: () => wallet.publicKey(), signTransaction: async bytes => {
       await assertTarget();
       return wallet.signTransaction(bytes);
@@ -144,6 +154,7 @@ async function createScopedRankedSignalGateway(
   officialSeason?: Pick<OfficialApprovalEvidence, "frozenAllowlistDigest" | "openingSnapshotDigest">,
 ) {
   const { client, rpc, wallet, actor, readEvidence } = setup;
+  const category = rankedSignalCategory(setup.category);
   const { journalDirectory } = setup;
   const profile = structuredClone(setup.profile);
   const pair = structuredClone(setup.pair);

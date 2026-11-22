@@ -20,14 +20,14 @@ const request: RankedEvidenceRequest = {
   txid: encode58(Buffer.alloc(64, 1)),
 };
 
-function evidence() {
-  const { origin: ignoredOrigin, genesisHash: ignoredGenesis, ...context } = request;
+function evidence(expected = request) {
+  const { origin: ignoredOrigin, genesisHash: ignoredGenesis, ...context } = expected;
   return {
     trade: { ...context, amountInRaw: "1000000", amountOutRaw: "998000", feeRaw: "2000" },
     leaderboard: {
-      seasonId: request.seasonId, accountId: request.accountId, category: request.category,
+      seasonId: expected.seasonId, accountId: expected.accountId, category: expected.category,
       division: "C", rank: 1, asOf: new Date(clock).toISOString(),
-      includedIntentId: request.intentId, includedTxid: request.txid,
+      includedIntentId: expected.intentId, includedTxid: expected.txid,
     },
   };
 }
@@ -114,11 +114,27 @@ test("official evidence refuses a mismatched account, signature, rank or raw fee
   }
 });
 
+test("Degen evidence matches both the exact trade and leaderboard category", async () => {
+  const degenRequest = { ...request, category: "degen" as const };
+  const { client, response } = fixture();
+  response.evidence = evidence(degenRequest);
+  assert.deepEqual(await client.readRankedEvidence(degenRequest), {
+    trade: { ...response.evidence.trade, origin, genesisHash: SOLANA_DEVNET_GENESIS },
+    leaderboard: response.evidence.leaderboard,
+  });
+  for (const section of ["trade", "leaderboard"] as const) {
+    response.evidence = evidence(degenRequest);
+    response.evidence[section].category = "crypto-bro";
+    await assert.rejects(client.readRankedEvidence(degenRequest), /INVALID_RANKED_EVIDENCE_RESPONSE/);
+  }
+});
+
 test("cross-origin and non-devnet evidence requests fail before reaching the transport", async () => {
   const { client, calls } = fixture();
   await assert.rejects(client.readRankedEvidence({ ...request, origin: "https://elsewhere.invalid" }), /RANKED_EVIDENCE_CONTEXT_MISMATCH/);
   await assert.rejects(client.readRankedEvidence({ ...request, genesisHash: asset(8) }), /RANKED_EVIDENCE_CONTEXT_MISMATCH/);
   await assert.rejects(client.readRankedEvidence({ ...request, operationKey: 12345678 as unknown as string }), /RANKED_EVIDENCE_CONTEXT_MISMATCH/);
+  await assert.rejects(client.readRankedEvidence({ ...request, category: "whale" as RankedEvidenceRequest["category"] }), /RANKED_EVIDENCE_CONTEXT_MISMATCH/);
   assert.equal(calls(), 0);
   assert.throws(() => new AudaceFiClient({
     origin, credential: () => "unused-fixture", apiBasePath: "/api/.." as "/api",

@@ -1,4 +1,9 @@
 export type Category = "degen" | "crypto-bro" | "whale";
+export type RankedCategory = Extract<Category, "crypto-bro" | "degen">;
+export function isRankedCategory(value: unknown): value is RankedCategory {
+  return value === "crypto-bro" || value === "degen";
+}
+
 export const SOLANA_DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 export type RecordValue = Record<string, unknown>;
 export function record(value: unknown): RecordValue {

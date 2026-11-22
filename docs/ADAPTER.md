@@ -1,14 +1,20 @@
-# Ranked Crypto Bro validation from Python
+# Ranked spot validation from Python
 
-This adapter runs a supervised `long` then `flat` on one spot pair in a dedicated Crypto Bro validation season on Solana devnet. Both legs use 20 basis points of simulated USDC fees. The operator provides the validation deployment and wallet callback. The public [offline preview](SIGNAL-PILOT.md) runs with no account, credential, or wallet.
+This adapter runs a supervised `long` then `flat` on one spot pair in a dedicated Crypto Bro or Degen validation season on Solana devnet. Both legs use 20 basis points of simulated USDC fees. The operator provides the validation deployment and wallet callback. The public [offline preview](SIGNAL-PILOT.md) runs with no account, credential, or wallet.
 
 ## Prepare a validation operator
 
 1. Use an identified `trading_bot` or `ai_agent` account, its individually issued API key with `read` and `execute` scopes, and its dedicated, enrolled wallet. The wallet owner signs the reviewed transaction message. AudaceFi authorizes the submission and cosigns on the server. Keep the account key, signer implementation, target profile and journals outside the checkout.
-2. Review the exact code revision and prove isolation from official standings and rewards. Confirm a fresh active Crypto Bro season, a valid opening snapshot, and working trade indexing and ranking. Pin the devnet genesis, program and ProgramData hash, authority, poster, mint mappings, and submission protocol. Review the program that charges 20 bps on both spot legs before pinning it.
+2. Review the exact code revision and prove isolation from official standings and rewards. Confirm a fresh active season in the selected category, a valid opening snapshot, and working trade indexing and ranking. Pin the devnet genesis, program and ProgramData hash, authority, poster, mint mappings, and submission protocol. Review the program that charges 20 bps on both spot legs before pinning it.
 3. Create a trusted `.mjs` operator module with a default export matching [`RankedSignalSetup`](../src/ranked-signal.ts). Supply a write-authorized `AudaceFiClient` with an injected transport bound to the isolated validation API. The logical origin is `https://audacefi-ranked-validation.invalid`. Supply the separately scoped read-only RPC port, external wallet callback, a dedicated absolute local journal directory, and fresh target attestation. The attestation must bind the exact validation season, account, wallet, deployment and ranking perimeter. Use a local filesystem with durable writes and operator-only access.
 4. Choose one eligible, non-exempt spot asset with at most six decimals. Match the selected symbol to the season's frozen `/v1/me/allowlist` and independently pin the asset and USDC mint mappings. The configured entry percentage, raw input budgets, position cap and minimum flat proceeds are the operator's limits. Leave two exit attempts in the journal budget. Begin with zero of the asset and reserve the wallet for this run.
 5. Supply a [ranked evidence reader](../src/ranked-proof.ts) that can link the exact finalized intent and signature to an indexed fill and to inclusion in a specific ranked leaderboard row. An aggregate row and a separate transaction lookup do not establish inclusion. The reader also provides the authoritative raw input, output and fee. Bound its waits and keep it confined to the validation environment.
+
+### Degen validation operator
+
+Copy [the Degen operator template](../examples/degen-operator.mjs) outside the checkout. Supply its `degen-validation-bindings.mjs` imports from the reviewed isolated deployment. These include the validation client and RPC, wallet callback, pinned profile, enrolled account and season, selected Degen pair, journal budgets, live target attestation, and ranked evidence reader. The template sets `category: "degen"`. Each Degen pair must use supported classic SPL tokens and meet the mapping, decimals and eligibility checks above. Confirm a usable exit into USDC for the chosen pair before the long signal.
+
+For a synthetic Degen spot policy with no network access, run `python3 examples/signal-pilot.py | npm run --silent signal:preview` after building the kit. It previews `TEST`/USDC only. For isolated devnet validation, pass the copied operator module and its exact allowlisted symbol to the Python example below. Verify both receipts against the Degen season, account, intent and transaction, and verify that the wallet holds zero of the asset after the flat receipt.
 
 ## Send signals
 
@@ -59,6 +65,6 @@ The current validation entry point supports a local Python, JSON Lines or HTTP p
 
 `AudaceFiClient.readRankedEvidence(request)` reads the proposed `audacefi.bench.ranked-evidence.v1` contract from `GET /v1/swap-intents/{id}/ranked-evidence`. The API key needs read scope. A deployment using the same-origin `/api/v1` proxy can set `apiBasePath: "/api"` on a dedicated read-only client. The client pins its HTTPS origin and path at construction. Validation execution uses its existing `/v1` deployment path.
 
-The response must match the requested account, season, wallet, operator type, intent, signature, and operation key. The leaderboard entry must identify the same included trade. The caller still checks finalized chain evidence and the operation journal. An explicit pending response can be polled. The reader honors one valid, short `Retry-After` delay for a rate-limited read. Longer delays and a second failure are returned to the operator. Writes retain their existing reconciliation rules.
+The response must match the requested account, season, category, wallet, operator type, intent, signature, and operation key. The leaderboard entry must identify the same included trade in that category. The caller still checks finalized chain evidence and the operation journal. An explicit pending response can be polled. The reader honors one valid, short `Retry-After` delay for a rate-limited read. Longer delays and a second failure are returned to the operator. Writes retain their existing reconciliation rules.
 
 Use this reader after the target deploys and qualifies the evidence endpoint. The default Python target uses the dedicated validation profile. The explicit official target is described in the [operator guide](OPERATOR-SIGNALS.md).
