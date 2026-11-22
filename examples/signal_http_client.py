@@ -6,6 +6,11 @@ import json
 import re
 from typing import Mapping, NamedTuple
 
+if __package__:
+    from .spot_symbols import normalize_spot_symbol
+else:
+    from spot_symbols import normalize_spot_symbol
+
 
 class SignalReply(NamedTuple):
     status: str
@@ -16,10 +21,10 @@ class SignalReply(NamedTuple):
 def prepare_signal(instrument: str, symbol_map: Mapping[str, str], *, signal_id: str,
                    sequence: int, side: str, target_bps: int, expires_at_ms: int) -> bytes:
     """Build bytes from an operator-approved symbol mapping and producer-assigned identity."""
-    symbol = symbol_map.get(instrument)
-    if not isinstance(symbol, str) or not re.fullmatch(r"[A-Z0-9_-]{1,16}", symbol) or symbol == "USDC":
+    symbol = normalize_spot_symbol(symbol_map.get(instrument))
+    if symbol is None or symbol == "USDC":
         raise ValueError("The instrument has no approved spot symbol.")
-    if any(other != instrument and target == symbol for other, target in symbol_map.items()):
+    if any(other != instrument and normalize_spot_symbol(target) == symbol for other, target in symbol_map.items()):
         raise ValueError("Use one source instrument per AudaceFi spot symbol and journal.")
     if not isinstance(signal_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", signal_id):
         raise ValueError("The signal ID must contain 8 to 64 URL-safe characters.")

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { benchPlan, type BenchProfile } from "./bench.ts";
 import { digest } from "./canonical.ts";
 import { AudaceFiClient, mint, rawAmount, uuid, type OfficialProxyOptions, type RequestGuard } from "./client.ts";
-import { integer, isRankedCategory, SOLANA_DEVNET_GENESIS, type RankedCategory } from "./contract.ts";
+import { integer, isCanonicalSpotSymbol, isRankedCategory, SOLANA_DEVNET_GENESIS, type RankedCategory } from "./contract.ts";
 import { FileJournal, type JournalPolicy } from "./journal.ts";
 import { createOfficialOperationGuard, officialApprovalDeploymentDigest,
   type OfficialApprovalBindings, type OfficialApprovalEvidence, type OfficialApprovalSource } from "./official-approval.ts";
@@ -170,7 +170,7 @@ async function createScopedRankedSignalGateway(
   const totalExitAttempts = integer(pair.exitAttempts + recoveryAttempts, 2, 10);
   const recoveryFloor = pair.recoveryExit === undefined ? minimumFlatOut : BigInt(rawAmount(pair.recoveryExit.minimumOutRaw));
   if (recoveryFloor > minimumFlatOut) throw new Error("INVALID_RANKED_RECOVERY_FLOOR");
-  if (!/^[A-Z0-9_-]{1,16}$/.test(pair.symbol) || pair.symbol === "USDC" ||
+  if (!isCanonicalSpotSymbol(pair.symbol) || pair.symbol === "USDC" ||
       !/^[A-Za-z0-9_-]{1,64}$/.test(source) || (actor !== "trading_bot" && actor !== "ai_agent")) {
     throw new Error("INVALID_RANKED_OPERATOR");
   }
@@ -184,7 +184,7 @@ async function createScopedRankedSignalGateway(
   const reference = createReferenceAdapters({ profile, client, rpc, wallet });
   const usdc = profile.mappings.find(item => item.mainnet === profile.usdcMainnet);
   const asset = profile.mappings.find(item => item.mainnet === pair.assetMint);
-  if (!usdc || usdc.decimals !== 6 || !asset || asset === usdc || asset.decimals > 6) {
+  if (!usdc || usdc.decimals !== 6 || !asset || asset === usdc) {
     throw new Error("INVALID_RANKED_SPOT_PAIR");
   }
   const policy: SpotSignalPolicy = {

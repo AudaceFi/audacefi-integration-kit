@@ -3,6 +3,7 @@ import importlib.util
 from io import BytesIO, StringIO
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from unittest.mock import patch
 
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "ranked-signal.py"
+sys.path.insert(0, str(EXAMPLE.parent))
 SPEC = importlib.util.spec_from_file_location("ranked_signal_example", EXAMPLE)
 RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
@@ -51,6 +53,21 @@ class RankedRunnerTest(unittest.TestCase):
     def setUp(self):
         self.directory = Path(self.enterContext(tempfile.TemporaryDirectory())) / "run"
         self.directory.mkdir(mode=0o700)
+
+    def test_operator_examples_can_be_imported_as_modules(self):
+        probe = (
+            "from importlib import import_module\n"
+            "from pathlib import Path\n"
+            "import sys\n"
+            "sys.path.insert(0, str(Path.cwd()))\n"
+            "for name in ('league_preflight', 'ranked-signal', 'signal_http_client'):\n"
+            "    import_module(f'examples.{name}')\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-B", "-c", probe],
+            cwd=EXAMPLE.parents[1], capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def run_example(self, child, *, target=None):
         args = [str(EXAMPLE), "--operator", str(self.directory / "operator.mjs"), "--run-dir", str(self.directory),

@@ -60,13 +60,13 @@ class LeaguePreflightTest(unittest.TestCase):
         self.reads.append(path)
         return {self.state_path: self.state, self.allowlist_path: self.allowlist}[path]
 
-    def check(self):
+    def check(self, symbol="PILOT"):
         return check_league(
             category=self.category,
             season_id=SEASON,
             wallet=WALLET,
             asset_mint=ASSET,
-            symbol="PILOT",
+            symbol=symbol,
             read_json=self.read_json,
             now=NOW,
         )
@@ -117,6 +117,19 @@ class LeaguePreflightTest(unittest.TestCase):
                                          "eligible": True, "exempt": False})
         with self.assertRaises(PreflightError):
             self.check()
+
+    def test_preflight_matches_extended_labels_by_alias_and_mint(self):
+        for symbol in ("$WIF", "LMAO!", "Old Slerf"):
+            with self.subTest(symbol=symbol):
+                self.configure("degen")
+                self.allowlist["tokens"][0]["symbol"] = symbol
+                self.assertIsNone(self.check(symbol=symbol.upper()))
+                self.allowlist["tokens"].append({
+                    "mint": "6" * 44, "symbol": symbol.lower(), "decimals": 5,
+                    "eligible": True, "exempt": False,
+                })
+                with self.assertRaises(PreflightError):
+                    self.check(symbol=symbol)
 
 
 class SandboxReaderTest(unittest.TestCase):

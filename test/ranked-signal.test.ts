@@ -177,6 +177,8 @@ test("ranked readiness scope stays stable and binds the actual gateway and journ
     { seasonId: syntheticId(22) },
     { playerPublicKey: asset(9) },
     { profile: { ...setup.profile, programDataSha256: "0".repeat(64) } },
+    ...[8, 9].map(decimals => ({ profile: { ...setup.profile, mappings: setup.profile.mappings.map(mapping =>
+      mapping.mainnet === setup.pair.assetMint ? { ...mapping, decimals } : mapping) } })),
     { pair: { ...setup.pair, maxEntryBps: 1000 } },
     { journalDirectory: directory },
   ]) {
@@ -293,6 +295,25 @@ test("ranked gateway refuses unapproved signals and profiles before writes", asy
   await assert.rejects(accept(signal("long", 1)), /RANKED_SYMBOL_NOT_ALLOWLISTED/);
   assert.deepEqual(posts(), []);
   assert.equal(h.counts().walletCalls, 0);
+});
+
+test("Degen alias matching normalizes API labels and requires one approved mint", async (t) => {
+  const { h, setup, open, signal, posts } = await rankedFixture(t, undefined, "degen");
+  setup.pair.symbol = "OLD SLERF";
+  const listed = h.allowlist.tokens[1];
+  listed.symbol = "Old Slerf";
+  const accept = await open();
+  h.allowlist.tokens.push({ ...listed, mint: asset(9), symbol: "oLd SlErF" });
+  await assert.rejects(accept(signal("long", 1, "ranked-entry", "OLD SLERF")), /RANKED_SYMBOL_NOT_ALLOWLISTED/);
+  h.allowlist.tokens.pop();
+  listed.mint = asset(9);
+  await assert.rejects(accept(signal("long", 1, "ranked-entry", "OLD SLERF")), /RANKED_SYMBOL_NOT_ALLOWLISTED/);
+  assert.deepEqual(posts(), []);
+  assert.equal(h.counts().walletCalls, 0);
+  listed.mint = setup.pair.assetMint;
+  const receipt = await accept(signal("long", 1, "ranked-entry", "OLD SLERF"));
+  assert.ok(receipt.ranked);
+  assert.deepEqual(posts(), postLifecycle);
 });
 
 test("ranked gateway refuses to transmit a signature when the position changes at the wallet", async (t) => {

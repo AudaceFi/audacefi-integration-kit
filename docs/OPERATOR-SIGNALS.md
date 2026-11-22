@@ -4,6 +4,14 @@ An external strategy sends a small signal to the kit. The kit turns an approved 
 
 Use the [league rules guide](LEAGUE-RULES.md) to give the strategy the competition objective, snapshot requirements and category rules. Its Python preflight checks the season, wallet and pair against the API before the strategy emits a signal.
 
+## Season 3 and the official gateway
+
+The official `signal:live` and `signal:http` targets require the AudaceFi-issued deployment profile and signed approval. That package is pending. The [Degen validation procedure](ADAPTER.md#degen-validation-operator) covers isolated qualification before enabling the official target.
+
+`runTradingBot` and `runAiAgent` are the lower-level TypeScript entry points for a qualified API and durable server submission. The Season 3 sandbox bench can supply cluster, program and mint mapping data through `GET /v1/devnet/bench`. A write target also needs independently verified program and fee information. The kit's official proxy adapter expects a reviewed 20 bps program and an account response confirming `read` and `execute` scopes. As checked on November 22, 2026, the Season 3 deployment serves the 10 bps direct-swap program and lacks that scope response and the per-intent ranked-evidence route. The kit's direct TypeScript flow needs deployment qualification before operators can use it for ranked Season 3 execution.
+
+For Season 3 onboarding, use the [league wallet guide](CONNECTING.md#link-and-enroll-a-league-wallet) and run the [read-only preflight](LEAGUE-RULES.md#check-the-league-before-sending-a-python-signal) once the enrolled season is active. Keep strategy execution on a compatible, separately qualified target.
+
 ## Set up your AudaceFi operator
 
 1. Complete the standard [AudaceFi signup](https://sandbox.audacefi.app/join) as a `trading_bot` or `ai_agent`. Link the operator-controlled Solana wallet for your chosen category and enroll it before the season starts. Obtain your account's individual API key with `read` and `execute` scopes. The approved `GET /v1/me` returns your account UUID as `account.id`. Use the enrolled season UUID and wallet public key supplied by your season setup. See [Connecting an operator](CONNECTING.md).
@@ -48,9 +56,24 @@ Approvals last at most one hour. A new operation needs at least two minutes rema
 
 For Degen, confirm that the deployed API admits the enrolled operator and reports ranked evidence in that category. Qualify the selected Degen pair in an isolated validation season before enabling the official gateway. Use a separate journal and run directory from Crypto Bro, and confirm that both spot legs are finalized and included in the matching Degen ranking. The [validation procedure and Degen operator template](ADAPTER.md#degen-validation-operator) cover the required inputs and receipt checks.
 
+## Operate in both categories
+
+Set up two separate operator configurations. Link and enroll each wallet for its own category, then run the preflight separately with the corresponding settings.
+
+| Configuration | Category | League wallet | Journal directory |
+| --- | --- | --- | --- |
+| Crypto Bro strategy | `crypto-bro` | Your enrolled Crypto Bro wallet | `/absolute/journals/crypto-bro` |
+| Degen strategy | `degen` | Your enrolled Degen wallet | `/absolute/journals/degen` |
+
+Use each configuration's own spot pair, signer's wallet, journal and saved signals. If using loopback HTTP receivers, assign each receiver its own port and run scope. Run the preflights close to the strategy decision and use the season window returned by the API.
+
 ## Translate your strategy's decisions
 
 Map an exact instrument identifier to an eligible AudaceFi spot symbol selected by your policy. An identifier can include the venue, expiry, strike, option right or prediction-market outcome. For example, you might configure a specific futures contract or a specific market outcome as a trigger for `long` on a separately selected spot pair. Your strategy defines when that exposure should turn on or off. Broker contract size, leverage, option direction and prediction-market prices do not determine AudaceFi sizing. `flat` closes the verified spot position into USDC. An unsupported decision or an unmapped instrument fails closed.
+
+Signal entries and exits support token precision through nine decimals when the API number maps back to the exact raw units. Small exact amounts still need a valid quote and enough output under the operator's exit policy. Both the direct client and the signal path retain their configured amount and budget checks. [Signal precision and exit rules](SIGNAL-PILOT.md#precision-and-exit-capacity)
+
+Use the canonical uppercase spot symbol in raw JSON Lines and the configured pair. Aliases such as `$WIF`, `LMAO!` and `OLD SLERF` can be represented. The Python helpers normalize supported labels to uppercase. Confirm that the current allowlist resolves the symbol uniquely to the approved asset mint.
 
 The [Python helper](../examples/signal_http_client.py) emits the same [JSON Lines signal](SIGNAL-PILOT.md#send-a-signal-from-another-bot) for every source. Supply `previous` from the last matching ranked receipt and `current` from your strategy's confirmed decision. The helper supports `long` and `flat`. Explicitly set `short_to_flat=True` if your strategy should close a previously confirmed long on a short decision. A short from flat is refused. Save the exact payload before delivery and advance your state only on the matching ranked receipt.
 
@@ -71,6 +94,8 @@ if payload is not None:
 `save_before_send` and `send_to_gateway` are your strategy's persistence and delivery functions. Use one producer and one gateway per journal. See the [broker examples](BROKER-POSITIONS.md) for successful snapshot requirements and the [Python HTTP client](PYTHON-HTTP.md) for sending and reconciling the saved bytes.
 
 ## Start the gateway
+
+Use the official commands below once you have the issued approval package and have qualified the deployment.
 
 Install the locked dependencies and build the checkout with `npm ci` and `npm run build`. Pipe scope-bound JSON Lines from your existing strategy, or start the authenticated loopback receiver for local HTTP clients. The [CLI framing](ADAPTER.md#send-signals) uses the saved `runScope` and the exact signal text in each line.
 

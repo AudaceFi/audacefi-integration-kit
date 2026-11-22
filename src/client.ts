@@ -1,4 +1,4 @@
-import { category, closed, integer, isRankedCategory, parseReadState, readStatePath, record, SOLANA_DEVNET_GENESIS, text, timestamp, type Category } from "./contract.ts";
+import { category, closed, integer, isRankedCategory, normalizeSpotSymbol, parseReadState, readStatePath, record, SOLANA_DEVNET_GENESIS, text, timestamp, type Category } from "./contract.ts";
 import type { RankedEvidence, RankedEvidenceRequest } from "./ranked-proof.ts";
 
 export type FetchPort = (url: string, init: RequestInit) => Promise<Response>;
@@ -256,7 +256,7 @@ export class AudaceFiClient {
     if (raw.seasonId !== seasonId || raw.category !== c.replace("-", "_") || !Array.isArray(raw.tokens) || raw.tokens.length > 2048) throw new ClientError("ALLOWLIST_CONTEXT_MISMATCH", null, false);
     const tokens = raw.tokens.map(value => {
       const t = record(value);
-      const symbol = typeof t.symbol === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/.test(t.symbol) ? t.symbol.toUpperCase() : t.symbol === null ? null : undefined;
+      const symbol = t.symbol === null ? null : normalizeSpotSymbol(t.symbol);
       return { mint: mint(t.mint), decimals: t.decimals === null ? null : integer(t.decimals, 0, 9), exempt: flag(t.exempt), eligible: flag(t.eligible), ...(symbol === undefined ? {} : { symbol }) };
     });
     if (new Set(tokens.map(t => t.mint)).size !== tokens.length) throw new ClientError("DUPLICATE_ALLOWLIST_MINT", null, false);

@@ -9,6 +9,11 @@ import re
 import sys
 import warnings
 
+if __package__:
+    from .spot_symbols import normalize_spot_symbol
+else:
+    from spot_symbols import normalize_spot_symbol
+
 
 CATEGORIES = ("degen", "crypto-bro")
 SANDBOX_HOST = "sandbox.audacefi.app"
@@ -16,7 +21,6 @@ USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 MAX_RESPONSE_BYTES = 262_144
 PUBLIC_KEY = re.compile(r"[1-9A-HJ-NP-Za-km-z]{32,44}")
 SEASON_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.I)
-SYMBOL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,15}")
 UTC_TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z")
 
 
@@ -98,8 +102,7 @@ def _check_pair(tokens, asset_mint, symbol):
         if not isinstance(mint, str) or not PUBLIC_KEY.fullmatch(mint) or mint in by_mint:
             raise PreflightError("The token list contains an invalid or duplicate mint.")
         by_mint[mint] = token
-        label = token.get("symbol")
-        if isinstance(label, str) and SYMBOL.fullmatch(label) and label.upper() == symbol:
+        if normalize_spot_symbol(token.get("symbol")) == symbol:
             symbol_matches.append(token)
 
     asset = by_mint.get(asset_mint, {})
@@ -119,13 +122,15 @@ def _check_pair(tokens, asset_mint, symbol):
 
 def check_league(*, category, season_id, wallet, asset_mint, symbol, read_json, now=None):
     """Return after a fresh scope and pair check, or raise PreflightError."""
+    symbol = normalize_spot_symbol(symbol)
     if (
         category not in CATEGORIES
         or not isinstance(season_id, str) or not SEASON_ID.fullmatch(season_id)
         or not isinstance(wallet, str) or not PUBLIC_KEY.fullmatch(wallet)
         or not isinstance(asset_mint, str) or not PUBLIC_KEY.fullmatch(asset_mint)
         or asset_mint == USDC_MINT
-        or not isinstance(symbol, str) or not SYMBOL.fullmatch(symbol)
+        or symbol is None
+        or symbol == "USDC"
     ):
         raise PreflightError("Provide a valid category, season ID, league wallet and spot asset.")
     if now is not None and (not isinstance(now, datetime) or now.utcoffset() is None):
@@ -165,7 +170,7 @@ def check_league(*, category, season_id, wallet, asset_mint, symbol, read_json, 
         or allowlist.get("allowlistFrozen") is not True
     ):
         raise PreflightError("A frozen allowlist for the configured season and category is unavailable.")
-    _check_pair(allowlist.get("tokens"), asset_mint, symbol.upper())
+    _check_pair(allowlist.get("tokens"), asset_mint, symbol)
     _check_window(as_of, starts_at, ends_at, now or datetime.now(timezone.utc))
 
 
