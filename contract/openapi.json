@@ -459,7 +459,7 @@
     "/v1/swap-intents/{id}/ranked-evidence": {
       "get": {
         "operationId": "readRankedEvidence",
-        "description": "Optional reviewed read capability for the account that owns a Crypto Bro devnet intent.",
+        "description": "Optional reviewed read capability for the account that owns a Crypto Bro or Degen devnet intent, where the deployment supports ranked evidence for that category. The trade and leaderboard categories must both match the intent's category.",
         "security": [
           {
             "ApiKeyBearer": []

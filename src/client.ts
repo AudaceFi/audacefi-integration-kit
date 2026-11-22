@@ -1,4 +1,4 @@
-import { category, closed, integer, parseReadState, readStatePath, record, SOLANA_DEVNET_GENESIS, text, timestamp, type Category } from "./contract.ts";
+import { category, closed, integer, isRankedCategory, parseReadState, readStatePath, record, SOLANA_DEVNET_GENESIS, text, timestamp, type Category } from "./contract.ts";
 import type { RankedEvidence, RankedEvidenceRequest } from "./ranked-proof.ts";
 
 export type FetchPort = (url: string, init: RequestInit) => Promise<Response>;
@@ -318,7 +318,7 @@ export class AudaceFiClient {
         (this.#officialProxy && (apiBasePath !== this.apiBasePath ||
           expected.accountId !== this.#officialProxy.identity.accountId || expected.actor !== this.#officialProxy.identity.actor)) ||
         typeof expected.operationKey !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(expected.operationKey) ||
-        expected.category !== "crypto-bro" ||
+        !isRankedCategory(expected.category) ||
         (expected.actor !== "trading_bot" && expected.actor !== "ai_agent")) {
       throw new ClientError("RANKED_EVIDENCE_CONTEXT_MISMATCH", null, false);
     }

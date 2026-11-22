@@ -66,8 +66,9 @@ function finalTokenMeta(encoded: string, profile: BenchProfile, player: string):
 
 export function referenceHarness(
   kind: ReferenceKind = "buy", actor: "ai_agent" | "trading_bot" = "trading_bot", mode: "root" | "official" = "root",
+  category: "crypto-bro" | "degen" = "crypto-bro",
 ) {
-  const old = harness(actor), poster = generateKeyPairSync("ed25519");
+  const old = harness(actor, category), poster = generateKeyPairSync("ed25519");
   const posterKey = encode58(Buffer.from(poster.publicKey.export({ type: "spki", format: "der" })).subarray(-32));
   const programData = Buffer.alloc(85); programData.writeUInt32LE(3); programData.writeBigUInt64LE(1n, 4); programData[12] = 1; decode58(asset(90), 32).copy(programData, 13); Buffer.from("synthetic-code-only").copy(programData, 45);
   const profile: BenchProfile = { apiOrigin: old.client.origin, expectedGenesis: asset(8), programId: asset(7), programData: asset(89), programDataSha256: hashBytes(programData), admin: asset(90), poster: posterKey, freshnessSeconds: 900, usdcMainnet: asset(1), mappings: [{ mainnet: asset(1), devnet: asset(3), decimals: 6 }, { mainnet: asset(2), devnet: asset(4), decimals: 6 }, { mainnet: asset(5), devnet: asset(6), decimals: 9 }], apiApproval: { protocol: "audacefi.bench.submission.v1", validFromMs: clock - 60000, expiresAtMs: clock + 600000 } };
@@ -94,7 +95,8 @@ export function referenceHarness(
   let time = clock, blockHeight = 500, signed = false, walletCalls = 0, keyCalls = 0, credentialCalls = 0;
   const rpcCalls: { method: string; params: any[] }[] = [];
   const controls = { rpcGenesis: profile.expectedGenesis, rpcSlot: 500, blockhashValid: true, finalStatus: "finalized", finalError: null as any, finalMissing: false, finalTokenMeta: (meta: FinalTokenMeta): Partial<FinalTokenMeta> => meta, walletKey: o.playerPublicKey, mutateMessage: false, expireAfterKey: false, expireCredentialAfterSign: false, expireApprovalAtCredential: 0, revokeAfterSign: false, expireBlockhashAfterSign: false, loseFundsAfterSign: false };
-  const allowlist: any = { seasonId: o.seasonId, category: "crypto_bro", allowlistFrozen: true, tokens: profile.mappings.map(m => ({ mint: m.mainnet, decimals: m.decimals, exempt: m.mainnet === profile.usdcMainnet, eligible: m.mainnet !== profile.usdcMainnet })) };
+  const wireCategory = category.replace("-", "_");
+  const allowlist: any = { seasonId: o.seasonId, category: wireCategory, allowlistFrozen: true, tokens: profile.mappings.map(m => ({ mint: m.mainnet, decimals: m.decimals, exempt: m.mainnet === profile.usdcMainnet, eligible: m.mainnet !== profile.usdcMainnet })) };
   const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
   const accountId = syntheticId(20);
   const accessToken = mode === "official" ? "afk_synthetic_fixture" : "synthetic-api-credential";
@@ -108,7 +110,7 @@ export function referenceHarness(
         id: accountId, participantType: actor, status: "active", participantTypeDeclaredAt: new Date(clock).toISOString(),
       }, onboardingComplete: true, credentialScopes: ["read", "execute"] });
     }
-    if (target.pathname.endsWith("/allowlist")) { old.calls.push({ path: target.pathname, method: "GET", body: null }); assert.equal(target.searchParams.get("category"), "crypto_bro"); assert.equal(target.searchParams.get("mode"), "real"); return json(allowlist); }
+    if (target.pathname.endsWith("/allowlist")) { old.calls.push({ path: target.pathname, method: "GET", body: null }); assert.equal(target.searchParams.get("category"), wireCategory); assert.equal(target.searchParams.get("mode"), "real"); return json(allowlist); }
     if (target.pathname.endsWith("/quote")) { old.calls.push({ path: target.pathname, method: init.method!, body: JSON.parse(String(init.body)) }); return json(quoteWire); }
     return old.transport(target.toString(), init);
   };

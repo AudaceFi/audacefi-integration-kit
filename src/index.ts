@@ -5,7 +5,7 @@ export type { JournalPolicy, JournalEvent, JournalCapacity } from "./journal.ts"
 export { runOperation, reconcileOperation, finalizeOperation, abandonOperation } from "./operation.ts";
 export type { Operation, OperationLimits, VerifiedTarget, OperatorPorts, OperationResult, FinalEvidence, PlanEvidence } from "./operation.ts";
 export { parseReadState, readStatePath } from "./contract.ts";
-export type { ReadState, Category } from "./contract.ts";
+export type { ReadState, Category, RankedCategory } from "./contract.ts";
 export { replay } from "./replay.ts";
 export type { Decision, Config, Frame, ReplayResult } from "./replay.ts";
 export { runTradingBot, runAiAgent } from "./operators.ts";
