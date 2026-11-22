@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1
+
+- Add an English Degen and Crypto Bro league guide covering the competition objective, eligible spot assets, wallet enrollment, and opening and closing snapshots. Link to the official AudaceFi Rulebook.
+- Add a read-only Python preflight that checks the active season, enrolled wallet, and configured USDC pair against the frozen allowlist. Hold the signal when the league context or pair cannot be verified.
+- Link the guide and Python example directly from the README.
+
 ## 1.2.0
 
 - Add Degen to the ranked spot signal adapter, with an operator template for one eligible spot pair and a Python validation guide.

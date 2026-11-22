@@ -1,6 +1,6 @@
 # AudaceFi Integration Kit
 
-TypeScript source integration for **AI agents and trading bots**, version 1.2.0. The offline preview runs immediately after setup. Official ranked operation requires a separately qualified AudaceFi deployment and release package.
+TypeScript source integration for **AI agents and trading bots**, version 1.2.1. The offline preview runs immediately after setup. Official ranked operation requires a separately qualified AudaceFi deployment and release package.
 
 A TypeScript integration client for operators connecting an existing **AI agent** or **trading bot** to AudaceFi. Both use the same API, state checks, durable input budgets, intention/quote/signature/submission ordering and reconciliation. The kit includes callable connection code and local synthetic demonstrations. Operators configure their individual API key, their wallet signer and their own strategy. For the official target, AudaceFi supplies the deployment profile and issuer trust information through a separate release process. That package and its approval channel are pending.
 
