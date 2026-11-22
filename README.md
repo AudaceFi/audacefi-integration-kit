@@ -16,6 +16,7 @@ A TypeScript integration client for operators connecting an existing **AI agent*
 - Original deterministic offline replay and synthetic scenarios, plus local-only connected lifecycle and failure tests.
 - [Off-chain signal adapter](docs/SIGNAL-PILOT.md) with a language-independent JSON Lines input, an offline CLI, and a Python example for a synthetic `long` then `flat` on one spot pair.
 - Ranked signal gateway code for JSON Lines or local HTTP, with explicit source-instrument mapping and receipt checks for qualified Crypto Bro and Degen deployments. Each gateway uses one category and one eligible spot pair. [Operator guide](docs/OPERATOR-SIGNALS.md)
+- [Degen and Crypto Bro league rules](docs/LEAGUE-RULES.md) explain the competition objective. The [Python preflight example](examples/league_preflight.py) checks the active season, enrolled wallet and eligible spot pair.
 - [Connection guide](docs/CONNECTING.md), [reference adapter](docs/REFERENCE.md), [operator guide](docs/OPERATORS.md), [wire contract](docs/CONTRACT.md), [OpenAPI](contract/openapi.json) and [support](docs/SUPPORT.md).
 
 ## Install and verify locally

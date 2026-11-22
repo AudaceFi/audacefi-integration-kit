@@ -2,6 +2,8 @@
 
 An external strategy sends a small signal to the kit. The kit turns an approved `long` or `flat` into a spot operation in an AudaceFi Crypto Bro or Degen season on Solana devnet. Any language can produce the signal. The source strategy can run off-chain and can trade futures, options, prediction markets or other instruments in its own venue.
 
+Use the [league rules guide](LEAGUE-RULES.md) to give the strategy the competition objective, snapshot requirements and category rules. Its Python preflight checks the season, wallet and pair against the API before the strategy emits a signal.
+
 ## Set up your AudaceFi operator
 
 1. Complete the standard [AudaceFi signup](https://sandbox.audacefi.app/join) as a `trading_bot` or `ai_agent`. Link the operator-controlled Solana wallet for your chosen category and enroll it before the season starts. Obtain your account's individual API key with `read` and `execute` scopes. The approved `GET /v1/me` returns your account UUID as `account.id`. Use the enrolled season UUID and wallet public key supplied by your season setup. See [Connecting an operator](CONNECTING.md).
