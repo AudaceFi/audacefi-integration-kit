@@ -49,6 +49,15 @@ test("signals reject unknown fields, short, fractional sizes, invalid IDs and ov
   assert.throws(() => parseSpotSignal('{"s\\u0069de":"flat",' + JSON.stringify(signal).slice(1)), /DUPLICATE_SIGNAL_FIELD/);
 });
 
+test("signals accept canonical Degen labels and reject noncanonical labels", () => {
+  for (const symbol of ["$WIF", "LMAO!", "OLD SLERF", "OLD-TOKEN_9"]) {
+    assert.equal(parseSpotSignal(JSON.stringify({ ...signal, symbol })).symbol, symbol);
+  }
+  for (const symbol of ["Old Slerf", " OLD SLERF", "OLD SLERF ", "OLD  SLERF", "OLD\tSLERF", "OLD\n", "X".repeat(17), "PILOT/USDC"]) {
+    assert.throws(() => parseSpotSignal(JSON.stringify({ ...signal, symbol })), /INVALID_SIGNAL_SYMBOL/);
+  }
+});
+
 test("entry floors raw USDC sizing and binds operation identity to signal ID and league context", () => {
   const entry = prepareSpotSignal(input);
   assert.equal(entry.kind, "operation");
@@ -87,7 +96,8 @@ test("planning fails closed on unapproved, stale, unsafe or inexact input", () =
   assert.throws(() => prepareSpotSignal({ ...input, holdings: { ...holdings, observedAtMs: nowMs + 1 } }), /SIGNAL_HOLDINGS_STALE/);
   assert.throws(() => prepareSpotSignal({ ...input, holdings: { ...holdings, assetRaw: "1" } }), /SIGNAL_POSITION_ALREADY_OPEN/);
   assert.throws(() => prepareSpotSignal({ ...input, holdings: { ...holdings, usdcRaw: "4" } }), /SIGNAL_AMOUNT_TOO_SMALL/);
-  assert.throws(() => prepareSpotSignal({ ...input, policy: { ...policy, usdcDecimals: 9 }, holdings: { ...holdings, usdcRaw: "6" } }), /SIGNAL_AMOUNT_NOT_REPRESENTABLE/);
+  // The chosen raw amount is one unit below a billion at nine decimals and rounds up in a JSON number.
+  assert.throws(() => prepareSpotSignal({ ...input, policy: { ...policy, usdcDecimals: 9 }, holdings: { ...holdings, usdcRaw: "4999999999999999995" } }), /SIGNAL_AMOUNT_NOT_REPRESENTABLE/);
 });
 
 test("no signal is read against a journal with a pending operation, so a flat is never a no-op then", () => {
@@ -174,15 +184,9 @@ test("an entry keeps one slot and one position limit of asset budget per exit at
 });
 
 test("every exit the journal can admit is exactly representable as the API's JSON number", () => {
-  // Finer assets are refused at entry: they could hold dust below 1e-6 units, which prints in exponent form.
-  for (const assetDecimals of [7, 8, 9]) {
-    assert.throws(() => prepareSpotSignal({ ...input, policy: { ...policy, assetDecimals } }), /SIGNAL_DECIMALS_UNSUPPORTED/);
-    // An exit is still attempted, and dust is refused explicitly rather than mis-sized.
-    assert.throws(() => prepareSpotSignal({ ...exit, policy: { ...policy, assetDecimals }, holdings: { ...holdings, assetRaw: "9" } }), /SIGNAL_AMOUNT_NOT_REPRESENTABLE/);
-  }
   let seed = 0x2545f491;
   const next = () => (seed = (Math.imul(seed, 1_103_515_245) + 12_345) >>> 0);
-  for (let assetDecimals = 0; assetDecimals <= 6; assetDecimals++) {
+  for (let assetDecimals = 0; assetDecimals <= 9; assetDecimals++) {
     const units = 10n ** BigInt(12 + assetDecimals), cap = units < 999_999_999_999_999n ? units : 999_999_999_999_999n;
     const at = (limit: bigint) => ({ ...journal, budgets: { [policy.assetMint]: budget(limit.toString()) } });
     const decimals = { ...policy, assetDecimals };
@@ -200,10 +204,9 @@ test("every exit the journal can admit is exactly representable as the API's JSO
       if (raw < 1n || raw > cap) continue;
       const plan = prepareSpotSignal({ ...exit, policy: decimals, journal: at(cap), holdings: { ...holdings, assetRaw: raw.toString() } });
       assert.equal(plan.kind, "operation");
-      // The same unit check the operation runner applies before any request.
-      const text = String(plan.operation.amountIn), [whole, fraction = ""] = text.split(".");
-      assert.match(text, /^[0-9]+(?:[.][0-9]+)?$/, raw.toString());
-      assert.ok(fraction.length <= assetDecimals && BigInt(whole! + fraction.padEnd(assetDecimals, "0")) === raw, raw.toString());
+      // Check the recovered units independently of the planner's exponent conversion.
+      const fixed = plan.operation.amountIn.toFixed(assetDecimals);
+      assert.equal(BigInt(fixed.replace(".", "")), raw, `${assetDecimals} decimals, ${raw} raw`);
     }
   }
 });

@@ -682,7 +682,8 @@
                           },
                           "symbol": {
                             "type": ["string", "null"],
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,15}$"
+                            "maxLength": 16,
+                            "pattern": "^[-A-Za-z0-9_.$!]+(?: [-A-Za-z0-9_.$!]+)*$"
                           }
                         }
                       }

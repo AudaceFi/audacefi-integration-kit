@@ -1,6 +1,6 @@
 import { digest } from "./canonical.ts";
 import { mint, rawAmount, uuid } from "./client.ts";
-import { category, closed, integer, record, type Category } from "./contract.ts";
+import { category, closed, integer, isCanonicalSpotSymbol, matchesRawAmount, record, type Category } from "./contract.ts";
 import type { FileJournal, JournalCapacity } from "./journal.ts";
 import type { Operation } from "./operation.ts";
 
@@ -68,10 +68,6 @@ const policyFields = [
   "symbol", "seasonId", "category", "playerPublicKey", "usdcMint", "usdcDecimals", "assetMint", "assetDecimals",
   "maxEntryBps", "maxPositionRaw", "exitAttempts", "allowPartialExit",
 ];
-// The API carries amountIn as a JSON number. Below 1e-6 a number prints in exponent form, so finer
-// assets could hold dust that no exit can express.
-const maxAssetDecimals = 6;
-
 /** Largest raw exit whose decimal form survives a double: at most 15 significant digits and 1e12 units. */
 function exitCap(decimals: number): bigint {
   const units = 10n ** BigInt(12 + decimals);
@@ -84,7 +80,7 @@ function rawOrZero(value: unknown): bigint {
 function validateSignal(value: unknown): SpotSignal {
   const { id, sequence, symbol, side, targetBps, expiresAtMs } = closed(value, signalFields);
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) throw new Error("INVALID_SIGNAL_ID");
-  if (typeof symbol !== "string" || !/^[A-Z0-9_-]{1,16}$/.test(symbol)) throw new Error("INVALID_SIGNAL_SYMBOL");
+  if (!isCanonicalSpotSymbol(symbol)) throw new Error("INVALID_SIGNAL_SYMBOL");
   if (side !== "long" && side !== "flat") throw new Error("INVALID_SIGNAL_SIDE");
   return {
     id,
@@ -146,7 +142,6 @@ function admit(signal: unknown, policy: SpotSignalPolicy, nowMs: number) {
   if (entering) {
     // Entry-only limits: an exit is never refused for a reason that only matters when opening a position.
     if (proposal.targetBps > integer(policy.maxEntryBps, 1, 10_000)) throw new Error("SIGNAL_ENTRY_LIMIT");
-    if (assetDecimals > maxAssetDecimals) throw new Error("SIGNAL_DECIMALS_UNSUPPORTED");
     maxPosition = BigInt(rawAmount(policy.maxPositionRaw));
     if (maxPosition > exitCap(assetDecimals)) throw new Error("SIGNAL_POSITION_LIMIT_INVALID");
     // With one attempt, a single failed or abandoned exit would leave the position unable to exit from this journal.
@@ -216,7 +211,7 @@ export function prepareSpotSignal({ signal, policy, holdings, journal, nowMs }: 
   const fraction = digits.slice(integerPart.length).replace(/0+$/, "");
   const decimal = fraction ? integerPart + "." + fraction : integerPart;
   const amountIn = Number(decimal);
-  if (amountIn > 1e12 || String(amountIn) !== decimal) throw new Error("SIGNAL_AMOUNT_NOT_REPRESENTABLE");
+  if (!matchesRawAmount(amountIn, raw, inputDecimals)) throw new Error("SIGNAL_AMOUNT_NOT_REPRESENTABLE");
 
   return {
     kind: "operation",

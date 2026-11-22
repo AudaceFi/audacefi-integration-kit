@@ -112,6 +112,18 @@ class SignalHttpClientTest(unittest.TestCase):
                 prepare(**parameters)
         self.connection_type.assert_not_called()
 
+    def test_producer_normalizes_degen_labels_and_refuses_ambiguous_mappings(self):
+        for symbol in ("$WIF", "LMAO!", "Old Slerf"):
+            with self.subTest(symbol=symbol):
+                payload = prepare_signal("market", {"market": symbol}, **FIELDS)
+                self.assertEqual(json.loads(payload)["symbol"], symbol.upper())
+                with self.assertRaises(ValueError):
+                    prepare_signal("market", {"market": symbol, "other": symbol.lower()}, **FIELDS)
+        for symbol in (" OLD SLERF", "OLD  SLERF", "OLD\tSLERF", "OLD\n", "X" * 17):
+            with self.subTest(symbol=symbol), self.assertRaises(ValueError):
+                prepare_signal("market", {"market": symbol}, **FIELDS)
+        self.connection_type.assert_not_called()
+
     def test_sends_exact_body_once_to_fixed_loopback_endpoint(self):
         receipt = RANKED_RECEIPT
         self.assertEqual(self.send(stub_response(200, receipt)), SignalReply("ranked", receipt=receipt))

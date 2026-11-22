@@ -14,13 +14,32 @@ Constructor/import performs no I/O. Each method is one explicit request; there a
 
 For a read-only integration use `client.readState(category, mode)`. `mode=real` is an API data context, not permission to execute on mainnet. `asOf` is assembly time, not market or portfolio observation time. The reader validates its consumed projection and context, preserving unknown/unavailable states. It ignores extra response fields rather than logging them.
 
+## Link and enroll a league wallet
+
+1. Sign in to the [sandbox Account page](https://sandbox.audacefi.app/account) and select the category. Link your operator-controlled league wallet by signing the account's verification message. This is an off-chain signature and needs no SOL for a transaction fee.
+2. Enroll the linked wallet before the season's published opening time. Wallet linking and enrollment are session actions. Use the operator API key for API access after onboarding.
+3. Check the funding status after enrollment. An eligible first treasury grant for Crypto Bro or Degen supplies 10,000 test USDC and 0.05 native SOL for gas. Existing funding is checked before any credit. Later enrollments and replacement wallets do not automatically qualify for another grant. Enrollment and enrollment-triggered funding close at the scheduled start.
+
+If enrollment reports `TREASURY_CREDIT_FAILED`, follow the response. Retry only when it instructs you to retry. If the result is pending or unconfirmed, check the enrollment and funding status before taking another action.
+
+Some operator setups use a separate control wallet. Keep it in that role and use the enrolled league wallet for execution. If linking reports `AGENT_AUTHORITY_NOT_READY`, complete the required separation-of-authority setup and verify its status before trying again.
+
+| Account API code | What to check |
+| --- | --- |
+| `CATEGORY_ALREADY_LINKED` | The account already has an active league wallet for this category. |
+| `WALLET_IN_OTHER_CATEGORY` | The wallet is already linked for a different category. Use a distinct league wallet for each category. |
+| `WALLET_ALREADY_LINKED` | The wallet is linked to another account. |
+| `WALLET_NOT_LINKED` | Link the intended league wallet for this category before enrolling. |
+| `WALLET_ALREADY_REGISTERED` | The wallet is already recorded for this season. Each wallet address can be enrolled once per season. |
+| `REGISTRATION_CLOSED` | Check the published enrollment window and the scheduled start. |
+
 ## Shared connected flow
 
 `runTradingBot` and `runAiAgent` take the same `OperatorCall`. `operation` contains `operationKey`, `seasonId`, `category`, `playerPublicKey`, `tokenInMint`, `tokenOutMint`, `amountIn`, `amountInRaw` and `inputDecimals`. These functions add the appropriate actor type. `runOperation` also accepts that actor explicitly. Account type is separate from category and strategy; naming the function never enrolls or authorizes an account.
 
 `OperatorCall` also takes an optional `clock`, and its `operation` may carry optional `limits`, as a signal plan's operation does. These functions pass the limits to `runOperation` as its last argument, never as part of the operation; `runOperation` itself refuses an operation that carries them. `notAfterMs` is a deadline in epoch milliseconds, such as a signal's expiry. The final deadline check is under the journal's append lock just before the `SIGNED` write starts. The deadline is retired after the record is written. See [RECOVERY](RECOVERY.md). `outputDecimals` must equal the verified mapping's decimals for the token received (`OUTPUT_DECIMALS_MISMATCH`); it is checked before any reservation. `journalVersion` binds the operation to the journal and `FileJournal.capacity()` snapshot it was planned against (`JOURNAL_CHANGED_SINCE_SNAPSHOT`). The reservation checks it after its own key and unresolved-operation checks, and a refusal writes nothing. A deadline or journal-version limit requires a `FileJournal` from this loaded copy of the kit. The runner rejects those limits on legacy JavaScript journal adapters with `JOURNAL_LIMITS_UNSUPPORTED`. Legacy adapters remain usable for calls without those limits. Use the concrete journal for every operation on a signal pilot's journal directory, including calls without limits. A legacy adapter does not report its in-flight calls to signal preparation.
 
-The amount is in units of the input token, not USDC cents or a hypothetical replay reservation. `amountInRaw` is a positive u64 decimal string. `amountIn` must exactly describe the same units at the stated0..9decimals, with no rounding or scientific-notation conversion. Both mainnet identity mints must have separately verified devnet mappings. Synthetic replay BUY/SELL entries are not executable orders; an operator policy must construct and approve an operation explicitly.
+The input amount uses the token's own units. `amountInRaw` is a positive u64 decimal string. The JSON number `amountIn` must recover the exact same raw units at the stated precision from zero through nine decimals. A small number can use exponent notation on the wire, such as `1e-9` for one raw unit of a nine-decimal token. The check rejects rounding and raw-unit mismatches. Both mainnet identity mints need separately verified devnet mappings. An operator policy must construct and approve the operation explicitly.
 
 The flow validates an active devnet-onchain season, window, wallet, mode/category and an assembly age at most120seconds with at most30seconds future skew. Those conservative client defaults are not a platform freshness guarantee. Fresh market/portfolio evidence, policy limits and decision quality remain the operator's responsibility; `asOf` cannot stand in for them. Freshness and quote expiry are rechecked before signature journaling and submission.
 

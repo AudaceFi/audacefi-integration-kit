@@ -1,5 +1,5 @@
 import { AudaceFiClient, ClientError, mint, parseQuote, rawAmount, uuid, type Quote, type Submission } from "./client.ts";
-import { category, closed, integer, timestamp, type Category } from "./contract.ts";
+import { category, closed, integer, matchesRawAmount, timestamp, type Category } from "./contract.ts";
 import { digest } from "./canonical.ts";
 import { FileJournal, type JournalEvent, type OperationRecord } from "./journal.ts";
 import { assertSignatureEncoding, inspectTransaction } from "./transaction.ts";
@@ -69,10 +69,10 @@ function validateOperation(o: Operation): Operation {
   closed(o,["actor","operationKey","seasonId","category","playerPublicKey","tokenInMint","tokenOutMint","amountIn","amountInRaw","inputDecimals"]);
   if (o.actor !== "ai_agent" && o.actor !== "trading_bot") throw new Error("INVALID_ACTOR");
   if (!/^[A-Za-z0-9_-]{8,128}$/.test(o.operationKey)) throw new Error("INVALID_OPERATION_KEY");
-  uuid(o.seasonId); category(o.category); mint(o.playerPublicKey); mint(o.tokenInMint); mint(o.tokenOutMint); rawAmount(o.amountInRaw);
+  uuid(o.seasonId); category(o.category); mint(o.playerPublicKey); mint(o.tokenInMint); mint(o.tokenOutMint);
+  const raw = BigInt(rawAmount(o.amountInRaw));
   const decimals = integer(o.inputDecimals, 0, 9);
-  const s = String(o.amountIn), parts = s.split(".");
-  if (!/^[0-9]+(?:[.][0-9]+)?$/.test(s) || (parts[1]?.length ?? 0) > decimals || o.amountIn <= 0 || o.amountIn > 1e12 || BigInt(parts[0]! + (parts[1] ?? "").padEnd(decimals,"0")) !== BigInt(o.amountInRaw) || o.tokenInMint === o.tokenOutMint) throw new Error("AMOUNT_UNIT_MISMATCH");
+  if (!matchesRawAmount(o.amountIn, raw, decimals) || o.tokenInMint === o.tokenOutMint) throw new Error("AMOUNT_UNIT_MISMATCH");
   return structuredClone(o);
 }
 function validateTarget(t: VerifiedTarget, o: Operation, outputDecimals: number | undefined): VerifiedTarget {

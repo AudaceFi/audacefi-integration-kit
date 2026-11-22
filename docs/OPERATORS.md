@@ -11,6 +11,8 @@ For either actor, **AudaceFi onboarding is mandatory to obtain an individual API
 
 For both: follow [CONNECTING](CONNECTING.md) and use the same journal and reconciliation. The [reference suite](REFERENCE.md) supplies concrete target/plan checks, transaction construction and finality for the supported devnet bench. Supply the independently qualified profile, RPC endpoint and player wallet callbacks, or separately review custom ports. A bot's existing exchange/wallet executor must not bypass AudaceFi's intention/quote/server submission path. A model cannot select credentials, endpoint, executable code, signing policy or raw transaction bytes.
 
+Use your signed-in [Account page](https://sandbox.audacefi.app/account) to link the wallet and enroll it. Check [wallet linking, funding and enrollment errors](CONNECTING.md#link-and-enroll-a-league-wallet) before starting the API integration. For two categories, use [separate wallets and journals](OPERATOR-SIGNALS.md#operate-in-both-categories).
+
 ## Local examples
 
 ```sh

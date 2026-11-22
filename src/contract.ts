@@ -4,6 +4,17 @@ export function isRankedCategory(value: unknown): value is RankedCategory {
   return value === "crypto-bro" || value === "degen";
 }
 
+/** Canonical ASCII label used to bind a signal to its configured pair. */
+export function normalizeSpotSymbol(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length > 16 ||
+      !/^[-A-Za-z0-9_.$!]+(?: [-A-Za-z0-9_.$!]+)*$/.test(value)) return undefined;
+  return value.toUpperCase();
+}
+
+export function isCanonicalSpotSymbol(value: unknown): value is string {
+  return typeof value === "string" && normalizeSpotSymbol(value) === value;
+}
+
 export const SOLANA_DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 export type RecordValue = Record<string, unknown>;
 export function record(value: unknown): RecordValue {
@@ -31,6 +42,14 @@ export function integer(v: unknown, min = 0, max = 1_000_000_000_000): number {
   if (typeof v !== "number" || !Number.isSafeInteger(v) || v < min || v > max)
     throw new Error("INVALID_INTEGER");
   return v;
+}
+/** Compare the JSON number's exact decimal form to verified raw units. */
+export function matchesRawAmount(amount: unknown, raw: bigint, decimals: number): boolean {
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0 || amount > 1e12) return false;
+  const [mantissa, exponent = "0"] = String(amount).split("e");
+  const [whole, fraction = ""] = mantissa!.split(".");
+  const shift = decimals + Number(exponent) - fraction.length;
+  return shift >= 0 && BigInt(whole! + fraction) * 10n ** BigInt(shift) === raw;
 }
 export function timestamp(v: unknown): number {
   const s = text(v),

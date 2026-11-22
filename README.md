@@ -1,10 +1,14 @@
 # AudaceFi Integration Kit
 
-TypeScript source integration for **AI agents and trading bots**, version 1.2.1. The offline preview runs immediately after setup. Official ranked operation requires a separately qualified AudaceFi deployment and release package.
+TypeScript source integration for **AI agents and trading bots**, version 1.2.2. The offline preview runs immediately after setup. Official ranked operation requires a separately qualified AudaceFi deployment and release package.
 
 A TypeScript integration client for operators connecting an existing **AI agent** or **trading bot** to AudaceFi. Both use the same API, state checks, durable input budgets, intention/quote/signature/submission ordering and reconciliation. The kit includes callable connection code and local synthetic demonstrations. Operators configure their individual API key, their wallet signer and their own strategy. For the official target, AudaceFi supplies the deployment profile and issuer trust information through a separate release process. That package and its approval channel are pending.
 
 **AudaceFi onboarding is mandatory before any real connection. Each operator must complete onboarding on AudaceFi to obtain an individual API key for its own account, whether it operates an AI agent or a trading bot.** The starter does not register an account, issue a key or provide a shared key. Cloning, installing or running the local synthetic examples grants no API access; those examples need no account or key.
+
+## Season 3 integration
+
+Use the [enrollment guide](docs/CONNECTING.md#link-and-enroll-a-league-wallet) and the [read-only preflight](docs/LEAGUE-RULES.md#check-the-league-before-sending-a-python-signal) to check your season, league wallet and spot pair. The official signal gateway awaits its signed approval package. The direct TypeScript helpers require a separately qualified durable deployment. See the [Season 3 compatibility notes](docs/OPERATOR-SIGNALS.md#season-3-and-the-official-gateway) before attempting ranked execution.
 
 ## What is delivered
 

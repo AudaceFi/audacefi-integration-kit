@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- Clarify Season 3 compatibility for the direct TypeScript client and the official signal gateway. Document session enrollment, initial funding, wallet errors, frozen allowlists, snapshot cutoffs, dust limits and separate wallets and journals for Crypto Bro and Degen.
+- Support exact API amounts for signal entries and exits on assets with up to nine decimals, including small values that use exponent notation on the wire.
+- Accept more Degen spot symbol aliases in TypeScript and Python while requiring unique allowlist matches and the approved asset mint.
+
 ## 1.2.1
 
 - Add an English Degen and Crypto Bro league guide covering the competition objective, eligible spot assets, wallet enrollment, and opening and closing snapshots. Link to the official AudaceFi Rulebook.

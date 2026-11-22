@@ -13,6 +13,11 @@ import threading
 import time
 import uuid
 
+if __package__:
+    from .spot_symbols import normalize_spot_symbol
+else:
+    from spot_symbols import normalize_spot_symbol
+
 
 def sync_directory(directory):
     if os.name == "posix":
@@ -152,7 +157,8 @@ def main():
     parser.add_argument("--timeout", default=600, type=int)
     parser.add_argument("--node", default="node")
     args = parser.parse_args()
-    if (not args.operator.is_absolute() or not re.fullmatch(r"[A-Z0-9_-]{1,16}", args.symbol)
+    symbol = normalize_spot_symbol(args.symbol)
+    if (not args.operator.is_absolute() or symbol is None or symbol == "USDC"
             or not 1 <= args.target_bps <= 10_000 or not 1 <= args.first_sequence < 10**12
             or not 1 <= args.timeout <= 1800):
         parser.error("Provide an absolute operator path and valid symbol, position size, sequence and timeout.")
@@ -179,7 +185,7 @@ def main():
                 (args.first_sequence, "long", args.target_bps),
                 (args.first_sequence + 1, "flat", 0),
             ):
-                signal = saved_signal(args.run_dir, side, sequence, args.symbol, size)
+                signal = saved_signal(args.run_dir, side, sequence, symbol, size)
                 result = wait_for_rank(child, responses, signal, ready["runScope"], args.timeout)
                 position = result.get("positionAfterRaw")
                 if not isinstance(position, str) or not re.fullmatch(r"0|[1-9][0-9]{0,19}", position) or (

@@ -239,6 +239,25 @@ test("no durable route means fail closed; no fallback executor",async t=>{
   assert.equal(r.state,"AMBIGUOUS");
   assert.deepEqual(h.calls.filter(c=>c.method==="POST").map(c=>c.path.split("/").at(-1)),["swap-intents","quote","signature","submit-durable"]);
 });
+test("eight- and nine-decimal amounts preserve one raw unit from intent through quote", async t => {
+  for (const decimals of [8, 9]) {
+    const h = harness();
+    const { journal } = await journalFor(t, { maxOperations: 1, inputBudgets: { [asset(2)]: "1" } });
+    h.target.mappings[1]!.decimals = decimals;
+    const flat = { ...h.operation, tokenInMint: asset(2), tokenOutMint: asset(1),
+      amountIn: Number(`1e-${decimals}`), amountInRaw: "1", inputDecimals: decimals };
+    Object.assign(h.operation, flat);
+    Object.assign(h.quote, { direction: "sell", amountInRaw: "1" });
+    await assert.rejects(runOperation(h.client, journal, { ...flat, amountInRaw: "2" }, h.ports, () => clock),
+      /AMOUNT_UNIT_MISMATCH/);
+    await assert.rejects(runOperation(h.client, journal, { ...flat, amountIn: flat.amountIn / 2 }, h.ports, () => clock),
+      /AMOUNT_UNIT_MISMATCH/);
+    assert.equal(h.calls.length, 0);
+    assert.equal((await runOperation(h.client, journal, flat, h.ports, () => clock)).state, "SUBMITTED");
+    assert.equal(h.calls.find(call => call.path === "/v1/swap-intents")?.body.amountIn, flat.amountIn);
+    assert.equal(h.calls.find(call => call.path.endsWith("/quote"))?.body.amountInRaw, "1");
+  }
+});
 test("unbound submission response is ambiguous, not success",async t=>{
   const h=harness(),{journal}=await journalFor(t);h.faults.badSubmitBinding=true;
   assert.equal((await runOperation(h.client,journal,h.operation,h.ports,()=>clock)).state,"AMBIGUOUS");
