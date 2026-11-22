@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- Add Degen to the ranked spot signal adapter, with an operator template for one eligible spot pair and a Python validation guide.
+- Bind the selected category to eligibility, swap intents, signed approvals, journal scope, and ranked receipts. Preserve Crypto Bro as the default and retain compatibility with existing Crypto Bro approvals and journals.
+- Cover Degen long-to-flat execution and rejection of cross-category approvals, journals, and evidence in offline tests.
+
 ## 1.1.0
 
 Season 1 spot signal adapter for external bots and agents.
