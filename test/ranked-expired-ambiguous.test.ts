@@ -42,7 +42,7 @@ test("Degen recovery closes an expired ambiguous send in place and permits the n
     if (path === `/v1/swap-intents/${firstIntent}/submission` && terminal) {
       const wire = await response.json();
       assert.equal(wire.submission, null);
-      return Response.json({ ...wire, terminalUnsent: terminal });
+      return Response.json({ protocol: wire.protocol, submission: null, terminalUnsent: terminal });
     }
     if (path.endsWith("/result")) {
       assert.equal(path, `/v1/swap-intents/${h.quote.intentId}/result`);

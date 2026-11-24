@@ -47,7 +47,30 @@ The supplied [reference finality verifier](REFERENCE.md) checks finalized status
 
 ### Reconcile an expired send with no durable record
 
-Use `reconcileExpiredUnsentOperation` from the built kit after the original process and its supervisors have stopped. Use the same client identity, target and journal. The deployment must return `audacefi.bench.terminal-unsent.v1` for the owned intent and exact player signature. This attests to an atomic terminal failure that fenced future submission and found no durable record. A legacy empty lookup, an ordinary failure acknowledgement or an already recorded submission is insufficient.
+#### Obtain a terminal no-send attestation
+
+1. Stop the original process and its supervisors. Keep the original journal and use the same account and API target. Use the intent ID and exact player signature in the journal's `SIGNED` entry. Verify that the finalized height is beyond the original last valid height, that the original blockhash is invalid at finalized commitment, and that the signature is absent from the pinned RPC history lookup. If the account-owned submission lookup already shows a durable record, use normal reconciliation.
+2. Once the approved deployment supports terminal no-send recovery and has enabled closure, call `POST /v1/swap-intents/{id}/close-unsent` as the intent owner using an API key with `execute` scope. Use the configured base path, including `/api` for the official proxy. Send this JSON body.
+
+   ```json
+   {
+     "playerSignature": "<exact player signature from SIGNED>"
+   }
+   ```
+
+   **Keep the intent in `signed` for this step.** Posting `failed` through `/result` first makes the intent ineligible for this closure and produces no attestation.
+3. A successful closure and an exact replay while closure is enabled return HTTP 200. If the write response is lost, read `GET /v1/swap-intents/{id}/submission` to reconcile it. Continue only when that lookup shows `submission: null` and a matching `terminalUnsent` with protocol `audacefi.bench.terminal-unsent.v1` and `status: failed`. A previous successful closure remains readable when new closures are disabled.
+
+| Refusal | Operator action |
+| --- | --- |
+| `CLOSE_UNSENT_DISABLED` | Preserve the journal and wait for the approved deployment to enable closure. |
+| `CLOSE_UNSENT_SUBMISSION_RECORDED` | Reconcile the durable record through normal finality checks. |
+| `CLOSE_UNSENT_SIGNATURE_MISMATCH` | Check the account, intent and exact journal signature. Keep the operation pending while they differ. |
+| `CLOSE_UNSENT_INVALID_STATE` | Preserve the journal and ask the deployment operator to review the intent state. |
+
+#### Close the original journal
+
+Use the updated kit. For a ranked signal, [replay the original signal](#recover-a-ranked-signal) with the saved journal and inbox. For a direct client, call `reconcileExpiredUnsentOperation` from the built kit. A legacy empty lookup or an ordinary failure acknowledgement leaves the operation pending.
 
 ```ts
 import { reconcileExpiredUnsentOperation } from "audacefi-integration-kit";
@@ -61,7 +84,7 @@ const closed = await reconcileExpiredUnsentOperation(client, journal, originalOp
 
 Use the exact saved, partially signed bytes and the last valid block height from the original build. The reference verifier checks the journal hashes and signature, the pinned genesis, finalized height strictly above the original limit, invalidity of that exact blockhash and absence of the signature in the RPC history lookup. Keep these inputs in private operator storage. Older direct journals may have neither original value. Preserve the journal and escalate if those values cannot be recovered.
 
-A `true` result means the journal has recorded `EXPIRED_UNSENT` with server attestation. The operation key, reservation and consumed budget stay counted. This helper never sends a transaction or writes an API result. A `false` result adds no terminal event. The regular finalized submission path still handles durable records. Use the updated kit to read a journal once it contains a server-attested expiry.
+A `true` result means the journal has recorded `EXPIRED_UNSENT` with server attestation. The operation key, reservation and consumed budget stay counted. This helper never sends a transaction or writes an API result. A `false` result adds no terminal event. The regular finalized submission path still handles durable records. The updated kit reads v1.2.2 journals. **Do not downgrade to v1.2.2 once the journal contains a server-attested expiry.** v1.2.2 rejects that event.
 
 ## Recover a ranked signal
 

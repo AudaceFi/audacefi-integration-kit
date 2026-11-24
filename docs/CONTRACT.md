@@ -16,12 +16,14 @@ Accounts must be declared `ai_agent` or `trading_bot` and appropriately enrolled
 | POST | `/v1/swap-intents/{id}/quote` | `amountInRaw` positive u64 decimal string; single quote or `kind: route` with two leg IDs, mapping, prices, fee and expiry. |
 | POST | `/v1/swap-intents/{id}/signature` | Player base58 signature; response same intention and `status: signed`. This is journaled before submission. |
 | POST | `/v1/swap-intents/{id}/submit-durable` | `quoteId`, optional `quoteOutId`, player-signed legacy base64 `transaction`; returns direct durable submission proof and state SUBMITTED/RECORDED/UNKNOWN. |
-| GET | `/v1/swap-intents/{id}/submission` | Envelope `{protocol, submission, resultStatus?}` under `audacefi.bench.submission.v1`. `submission` is a durable proof or null. When supplied, `resultStatus` is `confirmed`, `failed` or explicit null. Proof state `RECORDED` alone does not establish finality. |
+| GET | `/v1/swap-intents/{id}/submission` | Envelope `{protocol, submission, resultStatus?, terminalUnsent?}` under `audacefi.bench.submission.v1`. An absent submission permits only omitted or null `resultStatus`. An explicit `terminalUnsent` object attests to the exact owned intent and player signature only when there is no durable submission. |
 | POST | `/v1/swap-intents/{id}/result` | Only after independent final evidence: status confirmed/failed; returns same intention/status. |
 
 The client translates query category `crypto-bro` to intent category `crypto_bro`. The quote's `amountInRaw` must exactly match the caller's precise input units; there is no cents-to-token inference. A single quote has no wire `kind` and identifies `mintMainnet`, `mintDevnet`, `direction`, `price`, `expo`, `priceUsd`, `expiresAt`, `ttlSeconds`. Route quotes identify `mintInMainnet/Devnet`, `mintOutMainnet/Devnet`, `priceIn/Out`, `amountOutGrossRaw`, `feeRaw`, `feeBps:20`, `amountOutNetRaw` and `quoteIdOut`. Response `quoteIdOut` is sent as request `quoteOutId`.
 
 Durable proof consumes protocol, intention and both quote IDs, message SHA256, player public key/signature, txid, recorded time and state. Full signed message and transaction bytes are not returned by the read route or retained by this client journal. SUBMITTED/RECORDED/UNKNOWN cannot become confirmed without independent final chain evidence.
+
+A deployment that supports terminal no-send recovery returns `terminalUnsent` with protocol `audacefi.bench.terminal-unsent.v1`, `intentId`, `playerSignature` and `status: failed` after the operator's dedicated closure succeeds. The kit requires a matching attestation and independently verified finalized expiry to close the original journal without sending. See the [operator procedure](RECOVERY.md#obtain-a-terminal-no-send-attestation).
 
 Durable routes are registered only when the server capability is supplied. Missing/forbidden/unsupported routes never authorize fallback to another server signing/submission endpoint. No RPC submission fallback exists. The capability identifier is `audacefi.bench.submission.v1`; actual availability must be qualified against an authorized target before use.
 

@@ -190,6 +190,10 @@ for (const stop of ["recorded", "acknowledged"] as const) {
     const before = f.postCount();
     if (stop === "acknowledged") {
       assert.equal((await f.journal.read(f.key)).events.at(-1)?.txid, f.signed.playerSignature);
+      await assert.rejects(f.journal.append(f.key, {
+        stage: "EXPIRED_UNSENT", intentId: f.terminalUnsent.intentId,
+        txid: f.terminalUnsent.playerSignature, serverAttested: true,
+      }), /INVALID_JOURNAL_ORDER/);
       f.attest();
     } else {
       const recorded = (await f.client.readSubmissionStatus(f.terminalUnsent.intentId)).submission;
