@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.3
+
+- Recover an expired, unacknowledged send in the original journal when the server returns matching `terminalUnsent` evidence and the original signed transaction is proven expired at finalized commitment. Recovery keeps the reservation counted and neither signs nor resends.
+- Document owner-only closure through `POST /v1/swap-intents/{id}/close-unsent` using `execute` scope and the exact stored player signature. See the [recovery guide](docs/RECOVERY.md#obtain-a-terminal-no-send-attestation) for the `CLOSE_UNSENT_*` refusal codes.
+- Keep the intent in `signed` before closing it. Posting `failed` through `/result` first makes it ineligible for attestation.
+- The kit reads v1.2.2 journals. Do not run v1.2.2 against a journal that has recorded an attested `EXPIRED_UNSENT` event.
+
 ## 1.2.2
 
 - Clarify Season 3 compatibility for the direct TypeScript client and the official signal gateway. Document session enrollment, initial funding, wallet errors, frozen allowlists, snapshot cutoffs, dust limits and separate wallets and journals for Crypto Bro and Degen.

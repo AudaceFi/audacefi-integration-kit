@@ -36,10 +36,17 @@ export interface JournalEvent {
   genesisHash?: string;
   replayed?: boolean;
   exactInputBound?: true;
+  serverAttested?: true;
 }
-const eventKeys=["stage","intentId","quoteId","quoteOutId","messageHash","playerSignature","playerPublicKey","transactionHash","txid","genesisHash","replayed","exactInputBound"];
+const eventKeys=["stage","intentId","quoteId","quoteOutId","messageHash","playerSignature","playerPublicKey","transactionHash","txid","genesisHash","replayed","exactInputBound","serverAttested"];
 const maxEvents = 16;
 const maxRankedEvents = 64;
+export function hasUnacknowledgedSend(events: readonly JournalEvent[]): boolean {
+  const last = events.at(-1);
+  return (last?.stage === "SENDING" || (last?.stage === "AMBIGUOUS" && last.txid === undefined)) &&
+    events.findLast(event => event.stage === "SENDING" || event.stage === "SEND_REFUSED")?.stage === "SENDING" &&
+    !events.some(event => event.stage === "RECORDED" || event.stage === "SUBMITTED" || (event.stage === "AMBIGUOUS" && event.txid !== undefined));
+}
 function validateEvents(values:unknown[], recoverable: boolean):JournalEvent[] {
   const result:JournalEvent[]=[];
   let intent:string|undefined,quote:string|undefined,quoteOut:string|undefined,signed:JournalEvent|undefined,sending=false,intentSeen=false,replayed:boolean|undefined,exactInputBound=false;
@@ -47,7 +54,7 @@ function validateEvents(values:unknown[], recoverable: boolean):JournalEvent[] {
     INTENT:["stage","intentId","replayed","exactInputBound"],QUOTED:["stage","intentId","quoteId","quoteOutId"],
     SIGNED:["stage","intentId","quoteId","quoteOutId","messageHash","playerSignature","playerPublicKey","transactionHash","genesisHash"],
     SIGNATURE_POSTING:["stage","intentId"],SENDING:["stage","intentId"],SEND_REFUSED:["stage","intentId"],AMBIGUOUS:["stage","intentId","txid"],RECORDED:["stage","intentId","txid"],SUBMITTED:["stage","intentId","txid"],
-    FINAL_CONFIRMED:["stage","intentId","txid"],FINAL_FAILED:["stage","intentId","txid"],ABANDONED:["stage","intentId"],UNSENT:["stage"],EXPIRED_UNSENT:["stage","intentId","txid"],
+    FINAL_CONFIRMED:["stage","intentId","txid"],FINAL_FAILED:["stage","intentId","txid"],ABANDONED:["stage","intentId"],UNSENT:["stage"],EXPIRED_UNSENT:["stage","intentId","txid","serverAttested"],
   };
   for(const raw of values) {
     const stage=record(raw).stage as JournalEvent["stage"];
@@ -89,8 +96,9 @@ function validateEvents(values:unknown[], recoverable: boolean):JournalEvent[] {
     } else if(stage==="SEND_REFUSED") {
       if(previous!=="SENDING" || !signed)throw new Error("INVALID_JOURNAL_ORDER");sending=false;
     } else if(stage==="EXPIRED_UNSENT") {
-      if(sending || !signed || (previous!=="SIGNED" && previous!=="SIGNATURE_POSTING" && previous!=="SEND_REFUSED") ||
-          e.txid!==signed.playerSignature)throw new Error("INVALID_JOURNAL_ORDER");
+      const permitted = e.serverAttested === true ? hasUnacknowledgedSend(result) :
+        e.serverAttested === undefined && !sending && (previous === "SIGNED" || previous === "SIGNATURE_POSTING" || previous === "SEND_REFUSED");
+      if (!permitted || !signed || e.txid !== signed.playerSignature) throw new Error("INVALID_JOURNAL_ORDER");
     } else if(stage==="SUBMITTED" || stage==="RECORDED" || stage.startsWith("FINAL_")) {
       if(!signed || !sending || !intent || e.intentId!==intent || e.txid!==signed.playerSignature)throw new Error("JOURNAL_FINAL_BINDING_REQUIRED");
       if((stage==="SUBMITTED" || stage==="RECORDED") && previous!=="SENDING")throw new Error("INVALID_JOURNAL_ORDER");

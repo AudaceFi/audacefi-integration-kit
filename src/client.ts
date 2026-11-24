@@ -111,6 +111,14 @@ export interface SubmissionStatus {
   resultStatus: "confirmed" | "failed" | null;
   /** Older deployments omit the terminal-status projection. */
   resultStatusKnown: boolean;
+  /** The server has atomically fenced all future attempts to submit this exact signature. */
+  terminalUnsent?: TerminalUnsent;
+}
+export interface TerminalUnsent {
+  protocol: "audacefi.bench.terminal-unsent.v1";
+  intentId: string;
+  playerSignature: string;
+  status: "failed";
 }
 function signature(v: unknown): string {
   if (typeof v !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(v)) throw new Error("INVALID_SIGNATURE");
@@ -303,7 +311,13 @@ export class AudaceFiClient {
     if (submission ? submission.intentId !== intentId : resultStatus !== null) {
       throw new ClientError("SUBMISSION_CONTEXT_MISMATCH", null, false);
     }
-    return { submission, resultStatus, resultStatusKnown };
+    if (v.terminalUnsent === undefined || v.terminalUnsent === null) return { submission, resultStatus, resultStatusKnown };
+    const terminal = closed(v.terminalUnsent, ["protocol", "intentId", "playerSignature", "status"]);
+    if (submission || terminal.intentId !== intentId || terminal.protocol !== "audacefi.bench.terminal-unsent.v1" || terminal.status !== "failed") {
+      throw new ClientError("SUBMISSION_CONTEXT_MISMATCH", null, false);
+    }
+    const terminalUnsent: TerminalUnsent = { protocol: terminal.protocol, intentId, playerSignature: signature(terminal.playerSignature), status: terminal.status };
+    return { submission: null, resultStatus: null, resultStatusKnown, terminalUnsent };
   }
   /** Read the account's exact ranked fill when the deployment supports the evidence protocol. */
   async readRankedEvidence(input: Readonly<RankedEvidenceRequest>): Promise<RankedEvidence | null> {

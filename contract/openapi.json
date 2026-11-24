@@ -405,7 +405,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Consumed response; not proof of final chain execution",
+            "description": "Durable submission lookup with optional terminal no-send evidence. Finalized chain evidence is verified separately.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Attesting deployments return private, no-store.",
+                "schema": {
+                  "const": "private, no-store"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1044,6 +1052,28 @@
           }
         }
       },
+      "TerminalUnsent": {
+        "type": "object",
+        "description": "The server closed this owned intent and fenced future submission of its exact stored player signature. The intent ID and signature must match the journal. This evidence does not establish blockhash expiry.",
+        "additionalProperties": false,
+        "required": ["protocol", "intentId", "playerSignature", "status"],
+        "properties": {
+          "protocol": {
+            "const": "audacefi.bench.terminal-unsent.v1"
+          },
+          "intentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "playerSignature": {
+            "type": "string",
+            "pattern": "^[1-9A-HJ-NP-Za-km-z]{64,88}$"
+          },
+          "status": {
+            "const": "failed"
+          }
+        }
+      },
       "SubmissionLookup": {
         "type": "object",
         "required": [
@@ -1056,7 +1086,7 @@
           },
           "resultStatus": {
             "enum": [null, "confirmed", "failed"],
-            "description": "The durable submission's stored terminal product result, or explicit null when no terminal result is recorded. A legacy deployment may omit the field."
+            "description": "The durable submission's stored terminal product result, or explicit null when no terminal result is recorded. An absent submission permits omission or null. A legacy deployment may omit the field."
           },
           "submission": {
             "oneOf": [
@@ -1067,8 +1097,46 @@
                 "$ref": "#/components/schemas/Submission"
               }
             ]
+          },
+          "terminalUnsent": {
+            "description": "Optional terminal no-send evidence. Omission or null provides no attestation.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TerminalUnsent"
+              }
+            ]
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "submission": { "type": "null" }
+              }
+            },
+            "then": {
+              "properties": {
+                "resultStatus": { "type": "null" }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["terminalUnsent"],
+              "properties": {
+                "terminalUnsent": { "type": "object" }
+              }
+            },
+            "then": {
+              "properties": {
+                "submission": { "type": "null" }
+              }
+            }
+          }
+        ]
       },
       "SignatureInput": {
         "type": "object",

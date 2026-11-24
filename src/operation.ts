@@ -1,7 +1,7 @@
-import { AudaceFiClient, ClientError, mint, parseQuote, rawAmount, uuid, type Quote, type Submission } from "./client.ts";
+import { AudaceFiClient, ClientError, mint, parseQuote, rawAmount, uuid, type Quote, type Submission, type SubmissionStatus } from "./client.ts";
 import { category, closed, integer, matchesRawAmount, timestamp, type Category } from "./contract.ts";
 import { digest } from "./canonical.ts";
-import { FileJournal, type JournalEvent, type OperationRecord } from "./journal.ts";
+import { FileJournal, hasUnacknowledgedSend, type JournalEvent, type OperationRecord } from "./journal.ts";
 import { assertSignatureEncoding, inspectTransaction } from "./transaction.ts";
 
 export interface Operation {
@@ -326,7 +326,59 @@ function assertSubmissionBinding(saved: Submission, signed: JournalEvent | undef
 }
 /** The caller supplies final chain evidence from its pinned verifier; RECORDED is never final. */
 export type FinalEvidence = {status:"unknown"}|{status:"confirmed"|"failed";commitment:"finalized";genesisHash:string;txid:string};
-type VerifyFinal = (saved:Readonly<Submission>,expected:Readonly<{genesisHash:string;origin:string;apiBasePath?:"/api"}>)=>Promise<FinalEvidence>;
+type FinalTarget = Readonly<{genesisHash:string;origin:string;apiBasePath?:"/api"}>;
+type VerifyFinal = (saved:Readonly<Submission>,expected:FinalTarget)=>Promise<FinalEvidence>;
+export interface UnsentExpiryCandidate {
+  txid: string;
+  playerPublicKey: string;
+  messageHash: string;
+  transactionHash: string;
+}
+export type UnsentExpiryEvidence = {status:"unknown"} |
+  {status:"expired";commitment:"finalized";genesisHash:string;txid:string;messageHash:string};
+export type VerifyUnsentExpiry = (candidate: Readonly<UnsentExpiryCandidate>, expected: FinalTarget) => Promise<UnsentExpiryEvidence>;
+export interface UnsentExpiryInput {
+  transaction: string;
+  lastValidBlockHeight: number;
+}
+
+type JournalEntry = Awaited<ReturnType<FileJournal["read"]>>;
+
+async function closeExpiredUnsent(client: AudaceFiClient, journal: FileJournal, key: string, local: JournalEntry,
+  remote: SubmissionStatus, verifyExpiry: VerifyUnsentExpiry): Promise<boolean> {
+  const signed = local.events.find(event => event.stage === "SIGNED");
+  const terminal = remote.terminalUnsent;
+  if (!hasUnacknowledgedSend(local.events) || remote.submission || !terminal ||
+      !signed?.intentId || !signed.genesisHash || !signed.playerSignature || !signed.playerPublicKey ||
+      !signed.messageHash || !signed.transactionHash || terminal.intentId !== signed.intentId ||
+      terminal.playerSignature !== signed.playerSignature) return false;
+  const candidate = freeze({ txid: signed.playerSignature, playerPublicKey: signed.playerPublicKey,
+    messageHash: signed.messageHash, transactionHash: signed.transactionHash });
+  const apiBasePath = local.reservation.apiBasePath;
+  const expected = freeze({ genesisHash: signed.genesisHash, origin: client.origin, ...(apiBasePath ? { apiBasePath } : {}) });
+  const proof = await verifyExpiry(candidate, expected);
+  if (proof.status === "unknown") return false;
+  if (proof.status !== "expired" || proof.commitment !== "finalized" || proof.genesisHash !== expected.genesisHash ||
+      proof.txid !== candidate.txid || proof.messageHash !== candidate.messageHash) throw new Error("INVALID_UNSENT_EXPIRY_EVIDENCE");
+  await journal.append(key, { stage: "EXPIRED_UNSENT", intentId: signed.intentId, txid: candidate.txid, serverAttested: true });
+  return true;
+}
+
+/** Reconcile a previously attempted send. Requires server fencing and finalized expiry of the original signed transaction. */
+export async function reconcileExpiredUnsentOperation(client: AudaceFiClient, journal: FileJournal, key: string,
+  verifyExpiry: VerifyUnsentExpiry): Promise<boolean> {
+  return journal.withFinalizationLock(key, async () => {
+    const local = await journal.read(key);
+    assertJournalTarget(local.reservation, client);
+    const last = local.events.at(-1);
+    if (last?.stage === "EXPIRED_UNSENT") return last.serverAttested === true;
+    const intentId = local.events.find(event => event.stage === "SIGNED")?.intentId;
+    if (!hasUnacknowledgedSend(local.events) || !intentId) return false;
+    const remote = await client.readSubmissionStatus(intentId);
+    return closeExpiredUnsent(client, journal, key, local, remote, verifyExpiry);
+  });
+}
+
 type FinalStatus = "confirmed"|"failed"|"unknown";
 export async function finalizeOperation(client: AudaceFiClient,journal: FileJournal,key:string,verifyFinal:VerifyFinal,beforeRecord?:()=>Promise<void>): Promise<FinalStatus> {
   return settleFinalResult(client,journal,key,verifyFinal,{beforeRecord});
@@ -335,17 +387,42 @@ export async function finalizeOperation(client: AudaceFiClient,journal: FileJour
 export async function recoverFinalResult(client: AudaceFiClient,journal: FileJournal,key:string,verifyFinal:VerifyFinal,beforeRecord?:()=>Promise<void>): Promise<FinalStatus> {
   return settleFinalResult(client,journal,key,verifyFinal,{recovery:true,beforeRecord});
 }
-async function settleFinalResult(client: AudaceFiClient,journal: FileJournal,key:string,verifyFinal:VerifyFinal,options: {recovery?: boolean; beforeRecord?: (()=>Promise<void>)|undefined}): Promise<FinalStatus> {
+type FinalOptions = { recovery?: boolean; beforeRecord?: (()=>Promise<void>)|undefined; verifyExpiry?: VerifyUnsentExpiry };
+export async function finalizeRankedOperation(client: AudaceFiClient, journal: FileJournal, key: string, verifyFinal: VerifyFinal,
+  verifyUnsentExpiry: (candidate: Readonly<UnsentExpiryCandidate>, expected: FinalTarget, saved: Readonly<UnsentExpiryInput>) => Promise<UnsentExpiryEvidence>,
+  recovery: boolean, beforeRecord: () => Promise<void>): Promise<FinalStatus | "expired-unsent"> {
+  return settleFinalResult(client, journal, key, verifyFinal, { recovery, beforeRecord, verifyExpiry: async (candidate, expected) => {
+    const { signed } = await journal.readRecovery(key);
+    if (signed === undefined) return { status: "unknown" };
+    const saved = closed(signed, ["transaction", "quote", "build"]);
+    const build = closed(saved.build, ["createdAt", "lastValidBlockHeight"]);
+    if (typeof saved.transaction !== "string") throw new Error("RECOVERY_SIGNED_BINDING_MISMATCH");
+    return verifyUnsentExpiry(candidate, expected, {
+      transaction: saved.transaction, lastValidBlockHeight: integer(build.lastValidBlockHeight, 1, Number.MAX_SAFE_INTEGER),
+    });
+  } });
+}
+
+function settleFinalResult(client: AudaceFiClient,journal: FileJournal,key:string,verifyFinal:VerifyFinal,
+  options: FinalOptions & {verifyExpiry?:never}): Promise<FinalStatus>;
+function settleFinalResult(client: AudaceFiClient,journal: FileJournal,key:string,verifyFinal:VerifyFinal,
+  options: FinalOptions): Promise<FinalStatus | "expired-unsent">;
+async function settleFinalResult(client: AudaceFiClient,journal: FileJournal,key:string,verifyFinal:VerifyFinal,
+  options: FinalOptions): Promise<FinalStatus | "expired-unsent"> {
   // One finalization at a time per operation, so the result write is neither duplicated nor contradicted.
-  return journal.withFinalizationLock(key,async():Promise<FinalStatus>=>{
+  return journal.withFinalizationLock(key,async():Promise<FinalStatus | "expired-unsent">=>{
     const local=await journal.read(key),signed=local.events.find(e=>e.stage==="SIGNED"),last=local.events.at(-1)?.stage;
     assertJournalTarget(local.reservation, client);
     if(last==="FINAL_CONFIRMED" || last==="FINAL_FAILED")return last==="FINAL_CONFIRMED"?"confirmed":"failed";
+    if(last==="EXPIRED_UNSENT")return options.verifyExpiry?"expired-unsent":"unknown";
     if(!signed?.genesisHash || !signed.intentId)throw new Error("MISSING_NETWORK_BINDING");
     // A stop after SENDING left no response record: mark it ambiguous before any further remote write.
     if(last==="SENDING")await journal.append(key,{stage:"AMBIGUOUS",...(signed.intentId?{intentId:signed.intentId}:{})});
-    const stored=options.recovery?await client.readSubmissionStatus(signed.intentId):undefined;
-    if(stored && (!stored.resultStatusKnown || (stored.resultStatus===null && !options.beforeRecord)))return "unknown";
+    const stored=options.recovery || options.verifyExpiry?await client.readSubmissionStatus(signed.intentId):undefined;
+    // Ranked recovery of a lost result response has already seen a durable submission.
+    if(!options.recovery && stored && options.verifyExpiry &&
+        await closeExpiredUnsent(client,journal,key,local,stored,options.verifyExpiry))return "expired-unsent";
+    if(options.recovery && stored && (!stored.resultStatusKnown || (stored.resultStatus===null && !options.beforeRecord)))return "unknown";
     const saved=stored?stored.submission:await reconcileOperation(client,journal,key);
     if (!saved) return "unknown";
     assertSubmissionBinding(saved,signed);
@@ -354,11 +431,11 @@ async function settleFinalResult(client: AudaceFiClient,journal: FileJournal,key
     if(proof.status==="unknown")return "unknown";
     const status=proof.status;
     if ((status!=="confirmed" && status!=="failed") || proof.commitment!=="finalized" || proof.genesisHash!==signed.genesisHash || proof.txid!==saved.txid) throw new Error("INVALID_FINAL_EVIDENCE");
-    if(stored?.resultStatus && stored.resultStatus!==status)throw new Error("FINAL_RESULT_STATUS_MISMATCH");
+    if(options.recovery && stored?.resultStatus && stored.resultStatus!==status)throw new Error("FINAL_RESULT_STATUS_MISMATCH");
     const final:JournalEvent={stage:status==="confirmed"?"FINAL_CONFIRMED":"FINAL_FAILED",intentId:saved.intentId,txid:saved.txid};
     // Validate the local transition first: a result write must never be left unrecordable.
     await journal.check(key,final);
-    if(!stored || stored.resultStatus===null)await client.recordConfirmedResult(saved.intentId,status,options.beforeRecord);
+    if(!options.recovery || stored?.resultStatus===null)await client.recordConfirmedResult(saved.intentId,status,options.beforeRecord);
     await journal.append(key,final);
     return status;
   });

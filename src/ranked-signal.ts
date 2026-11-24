@@ -7,7 +7,7 @@ import { integer, isCanonicalSpotSymbol, isRankedCategory, SOLANA_DEVNET_GENESIS
 import { FileJournal, type JournalPolicy } from "./journal.ts";
 import { createOfficialOperationGuard, officialApprovalDeploymentDigest,
   type OfficialApprovalBindings, type OfficialApprovalEvidence, type OfficialApprovalSource } from "./official-approval.ts";
-import { finalizeOperation, recoverFinalResult, resumeRankedOperation, type Operation, type OperatorPorts } from "./operation.ts";
+import { finalizeRankedOperation, resumeRankedOperation, type Operation, type OperatorPorts } from "./operation.ts";
 import { runAiAgent, runTradingBot } from "./operators.ts";
 import { openRankedInbox } from "./ranked-inbox.ts";
 import { verifyRankedOperation, type RankedOperationStatus, type ReadRankedEvidence } from "./ranked-proof.ts";
@@ -403,12 +403,12 @@ async function createScopedRankedSignalGateway(
         }
         if (last?.stage !== "FINAL_CONFIRMED") {
           const attempted = saved.result_attempt === 1;
-          const final = attempted
-            ? await recoverFinalResult(client, journal, operationKey, reference.verifyFinal, assertCurrent)
-            : await finalizeOperation(client, journal, operationKey, reference.verifyFinal, async () => {
+          const final = await finalizeRankedOperation(client, journal, operationKey, reference.verifyFinal, reference.verifyUnsentExpiry,
+            attempted, async () => {
               await assertCurrent();
-              inbox.beforeResult(signal.id);
+              if (!attempted) inbox.beforeResult(signal.id);
             });
+          if (final === "expired-unsent") return closeUnranked(previous(), "unsent");
           if (final === "failed") return closeUnranked(previous(), "failed", identifiers);
           if (final === "unknown") {
             return { status: attempted ? "review-required" : "finality-pending", ranked: false, operationKey, ...identifiers };

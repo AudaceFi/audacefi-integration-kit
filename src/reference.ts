@@ -1,7 +1,7 @@
 import { AudaceFiClient, type Quote, type Submission } from "./client.ts";
 import { closed, integer, record, SOLANA_DEVNET_GENESIS, timestamp } from "./contract.ts";
 import { digest } from "./canonical.ts";
-import type { FinalEvidence, Operation, OperatorPorts, PlanEvidence, VerifiedTarget } from "./operation.ts";
+import type { FinalEvidence, Operation, OperatorPorts, PlanEvidence, UnsentExpiryCandidate, UnsentExpiryEvidence, UnsentExpiryInput, VerifiedTarget } from "./operation.ts";
 import type { RpcPort } from "./rpc.ts";
 import { benchAddresses, benchAmounts, benchPlan, verifyBenchMessage, type BenchProfile } from "./bench.ts";
 import { associatedAddress, ASSOCIATED_TOKEN_PROGRAM, CLOCK_SYSVAR, compileLegacy, decode58, decodeLegacy, discriminator, encode58, hashBytes, isCurvePoint, SYSTEM_PROGRAM, SYSVAR_OWNER, TOKEN_PROGRAM, UPGRADEABLE_LOADER, verifyEd25519 } from "./solana.ts";
@@ -324,6 +324,33 @@ export function createReferenceAdapters(options: { profile: BenchProfile; client
       return { status: outcome, commitment: "finalized", genesisHash: p.expectedGenesis, txid: saved.txid };
     } catch { return { status: "unknown" }; }
   }
+  async function blockhashExpired(blockhash: string, lastValid: number): Promise<boolean> {
+    await genesis();
+    const height = integer(await rpc.call("getBlockHeight", [config()]), 0, Number.MAX_SAFE_INTEGER);
+    if (height <= lastValid) return false;
+    const valid = withContext(await rpc.call("isBlockhashValid", [blockhash, config()]));
+    await genesis();
+    return valid.value === false;
+  }
+  async function verifyUnsentExpiry(candidate: Readonly<UnsentExpiryCandidate>,
+    expected: Readonly<{ genesisHash: string; origin: string; apiBasePath?: "/api" }>,
+    saved: Readonly<UnsentExpiryInput>): Promise<UnsentExpiryEvidence> {
+    try {
+      if (expected.genesisHash !== p.expectedGenesis || expected.origin !== p.apiOrigin || expected.apiBasePath !== p.apiBasePath) return { status: "unknown" };
+      const signed = decodeLegacy(saved.transaction);
+      const player = signed.signatures[0]!;
+      if (hashBytes(signed.bytes) !== candidate.transactionHash || signed.messageHash !== candidate.messageHash ||
+          signed.accounts[0]?.address !== candidate.playerPublicKey || encode58(player) !== candidate.txid ||
+          signed.accounts[1]?.address !== p.poster ||
+          signed.signatures[1]!.some(byte => byte !== 0) || !verifyEd25519(signed.message, player, candidate.playerPublicKey)) return { status: "unknown" };
+      const lastValid = integer(saved.lastValidBlockHeight, 1, Number.MAX_SAFE_INTEGER);
+      if (!await blockhashExpired(signed.blockhash, lastValid)) return { status: "unknown" };
+      const status = withContext(await rpc.call("getSignatureStatuses", [[candidate.txid], { searchTransactionHistory: true }]));
+      if (!Array.isArray(status.value) || status.value.length !== 1 || status.value[0] !== null) return { status: "unknown" };
+      await genesis();
+      return { status: "expired", commitment: "finalized", genesisHash: p.expectedGenesis, txid: candidate.txid, messageHash: candidate.messageHash };
+    } catch { return { status: "unknown" }; }
+  }
   async function readSpotHoldings(player: string, assetMainnet: string) {
     const asset = p.mappings.find(mapping => mapping.mainnet === assetMainnet);
     if (!asset || asset.mainnet === p.usdcMainnet) throw new Error("UNVERIFIED_SPOT_PAIR");
@@ -341,12 +368,7 @@ export function createReferenceAdapters(options: { profile: BenchProfile; client
     target,
     async expired(transaction, operation, quote, build) {
       const { decoded } = verifyBenchMessage(transaction, p, operation, quote, true);
-      await genesis();
-      const height = integer(await rpc.call("getBlockHeight", [config()]), 0, Number.MAX_SAFE_INTEGER);
-      if (height <= build.lastValidBlockHeight) return false;
-      const valid = withContext(await rpc.call("isBlockhashValid", [decoded.blockhash, config()]));
-      await genesis();
-      return valid.value === false;
+      return blockhashExpired(decoded.blockhash, build.lastValidBlockHeight);
     },
     capture(messageHash) {
       const built = builds.get(messageHash);
@@ -369,5 +391,5 @@ export function createReferenceAdapters(options: { profile: BenchProfile; client
       }
     },
   };
-  return { ports, verifyFinal, readSpotHoldings, recovery, selectBuildBlockhash, buildAt };
+  return { ports, verifyFinal, verifyUnsentExpiry, readSpotHoldings, recovery, selectBuildBlockhash, buildAt };
 }

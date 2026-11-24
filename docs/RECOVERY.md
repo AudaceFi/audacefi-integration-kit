@@ -45,6 +45,47 @@ Local tests use injected synthetic API, wallet and RPC responses with networking
 
 The supplied [reference finality verifier](REFERENCE.md) checks finalized status and exact legacy transaction bytes against the journal commitment, both signatures, slot, supported error representation and pinned genesis. Unknown errors, unavailable history or transport failure remain unknown. This is a bounded read operation, with no automatic polling, submission or replacement. It trusts the qualified RPC provider's observations; it is not a light client. A profile/program upgrade or provider change requires a separately reviewed recovery decision, never a relaxed check or fresh operation key to bypass a pending record.
 
+### Reconcile an expired send with no durable record
+
+#### Obtain a terminal no-send attestation
+
+1. Stop the original process and its supervisors. Keep the original journal and use the same account and API target. Use the intent ID and exact player signature in the journal's `SIGNED` entry. Verify that the finalized height is beyond the original last valid height, that the original blockhash is invalid at finalized commitment, and that the signature is absent from the pinned RPC history lookup. If the account-owned submission lookup already shows a durable record, use normal reconciliation.
+2. Once the approved deployment supports terminal no-send recovery and has enabled closure, call `POST /v1/swap-intents/{id}/close-unsent` as the intent owner using an API key with `execute` scope. Use the configured base path, including `/api` for the official proxy. Send this JSON body.
+
+   ```json
+   {
+     "playerSignature": "<exact player signature from SIGNED>"
+   }
+   ```
+
+   **Keep the intent in `signed` for this step.** Posting `failed` through `/result` first makes the intent ineligible for this closure and produces no attestation.
+3. A successful closure and an exact replay while closure is enabled return HTTP 200. If the write response is lost, read `GET /v1/swap-intents/{id}/submission` to reconcile it. Continue only when that lookup shows `submission: null` and a matching `terminalUnsent` with protocol `audacefi.bench.terminal-unsent.v1` and `status: failed`. A previous successful closure remains readable when new closures are disabled.
+
+| Refusal | Operator action |
+| --- | --- |
+| `CLOSE_UNSENT_DISABLED` | Preserve the journal and wait for the approved deployment to enable closure. |
+| `CLOSE_UNSENT_SUBMISSION_RECORDED` | Reconcile the durable record through normal finality checks. |
+| `CLOSE_UNSENT_SIGNATURE_MISMATCH` | Check the account, intent and exact journal signature. Keep the operation pending while they differ. |
+| `CLOSE_UNSENT_INVALID_STATE` | Preserve the journal and ask the deployment operator to review the intent state. |
+
+#### Close the original journal
+
+Use the updated kit. For a ranked signal, [replay the original signal](#recover-a-ranked-signal) with the saved journal and inbox. For a direct client, call `reconcileExpiredUnsentOperation` from the built kit. A legacy empty lookup or an ordinary failure acknowledgement leaves the operation pending.
+
+```ts
+import { reconcileExpiredUnsentOperation } from "audacefi-integration-kit";
+
+const closed = await reconcileExpiredUnsentOperation(client, journal, originalOperationKey,
+  (candidate, target) => reference.verifyUnsentExpiry(candidate, target, {
+    transaction: originalPartiallySignedTransaction,
+    lastValidBlockHeight: originalLastValidBlockHeight,
+  }));
+```
+
+Use the exact saved, partially signed bytes and the last valid block height from the original build. The reference verifier checks the journal hashes and signature, the pinned genesis, finalized height strictly above the original limit, invalidity of that exact blockhash and absence of the signature in the RPC history lookup. Keep these inputs in private operator storage. Older direct journals may have neither original value. Preserve the journal and escalate if those values cannot be recovered.
+
+A `true` result means the journal has recorded `EXPIRED_UNSENT` with server attestation. The operation key, reservation and consumed budget stay counted. This helper never sends a transaction or writes an API result. A `false` result adds no terminal event. The regular finalized submission path still handles durable records. The updated kit reads v1.2.2 journals. **Do not downgrade to v1.2.2 once the journal contains a server-attested expiry.** v1.2.2 rejects that event.
+
 ## Recover a ranked signal
 
 Stop the original gateway and keep the scoped journal, its inbox and the exact saved signal together. Use the same trusted operator module and one ingress for that journal. The supervised Python example resumes with the original run directory and reconstructs the frame from the saved `long.json` or `flat.json` and `run-scope`. Other producers can replay a JSONL envelope they saved before sending. On an official deployment, use the same reviewed origin and append `--target official`.
@@ -63,7 +104,7 @@ For an intention with no `SIGNED` record, an operator can call `abandonOperation
 - If the create response was lost before an intention ID was journaled, the gateway can retry the retained request with the same key while the original signal is still unexpired. The server must acknowledge `audacefi.swap-intent-input.v1` after binding the exact account-owned input, and the intention must still be built. Missing support, a different request, another status or an expired signal requires operator review.
 - For a signed operation with no possible durable send, the journal privately retains the exact original partially signed transaction, quote and blockhash limit. Replay revalidates those original bytes and current approval before retransmitting the same signature, with no second wallet request. Keep the journal private and outside Git. Share receipt fields or redacted metadata only. Existing records without the retained bytes remain subject to manual review.
 - The ranked journal retains every event up to its bounded limit. If repeated pre-send refusals exhaust the attempt allowance, it refuses further durable attempts and preserves room for a recorded outcome or verified expiry. Keep the original signal and reconcile it through the same journal. Reservations and budgets stay counted.
-- If the signed transaction has exceeded its original last valid height, the gateway requires the finalized RPC to report its exact blockhash invalid and the account-owned submission lookup to show no durable record. Only a journal that proves no possible durable send can then close as `EXPIRED_UNSENT`. A genuine `SENDING` or ambiguous durable transport attempt remains read-only and unresolved without exact durable or finality evidence.
+- For an unacknowledged `SENDING` or ambiguous transport attempt, the gateway uses the saved transaction and blockhash limit to verify expiry. It closes as `EXPIRED_UNSENT` only when the account-owned lookup includes exact terminal no-send evidence. Replay of the original signal then returns `closed-unranked` with reason `unsent`. A legacy lookup without the attestation leaves the operation pending. Earlier stages where the journal already proves there was no possible durable send retain their existing expiry path.
 - If a result POST may have been sent, the gateway compares the exact account-owned durable submission with independent finalized chain evidence. A matching terminal server result is recorded locally. An explicit server `resultStatus: null` for the exact submission permits replay of the same intention and status under current write approval. A missing status field, conflicting status, absent submission or uncertain finality requires review.
 
 ### Escalate an ambiguous durable submission

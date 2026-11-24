@@ -3,7 +3,7 @@ import test from "node:test";
 import { createReferenceAdapters } from "../src/reference.ts";
 import { RpcError, SolanaRpcReader, type ReadMethod } from "../src/rpc.ts";
 import { benchAmounts, benchPlan, verifyBenchMessage } from "../src/bench.ts";
-import { ASSOCIATED_TOKEN_PROGRAM, associatedAddress, compileLegacy, decode58, decodeLegacy, derivePda, encode58, SYSTEM_PROGRAM } from "../src/solana.ts";
+import { ASSOCIATED_TOKEN_PROGRAM, associatedAddress, compileLegacy, decode58, decodeLegacy, derivePda, encode58, hashBytes, SYSTEM_PROGRAM } from "../src/solana.ts";
 import { parseQuote } from "../src/client.ts";
 import { finalizeOperation, runOperation } from "../src/operation.ts";
 import { runAiAgent, runTradingBot } from "../src/operators.ts";
@@ -94,6 +94,75 @@ test("an exact officially failed transaction needs no token deltas", async t => 
   assert.equal((await runOperation(h.client, journal, h.operation, h.suite.ports, h.getNow)).state, "SUBMITTED");
   h.controls.finalError = { InstructionError: [2, { Custom: 6000 }] };
   assert.equal(await finalizeOperation(h.client, journal, h.operation.operationKey, h.suite.verifyFinal), "failed");
+});
+
+async function expiryFixture() {
+  const h = referenceHarness("buy", "ai_agent", "official");
+  const quote = parseQuote(h.quoteWire);
+  const target = await h.suite.ports.verifyTarget();
+  const unsigned = await h.suite.ports.build(h.operation, quote, target);
+  await h.suite.ports.verifyPlan(unsigned, h.operation, quote, target);
+  const { transaction, signature } = await h.suite.ports.sign(unsigned);
+  const signed = decodeLegacy(transaction);
+  const lastValidBlockHeight = h.suite.recovery.capture(signed.messageHash).lastValidBlockHeight;
+  const candidate = { messageHash: signed.messageHash, transactionHash: hashBytes(signed.bytes),
+    playerPublicKey: h.operation.playerPublicKey, txid: signature };
+  const expected = { genesisHash: h.profile.expectedGenesis, origin: h.profile.apiOrigin, apiBasePath: "/api" as const };
+  let finalizedHeight = lastValidBlockHeight + 1;
+  const observations: Array<{ method: ReadMethod; params: readonly unknown[] }> = [];
+  const feature = createReferenceAdapters({ profile: h.profile, client: h.client, wallet: h.wallet, clock: h.getNow,
+    rpc: { call: async (method, params) => {
+      observations.push({ method, params });
+      return method === "getBlockHeight" ? finalizedHeight : h.rawRpc(method, [...params]);
+    } },
+  });
+  h.controls.blockhashValid = false;
+  h.controls.finalMissing = true;
+  return { h, candidate, expected, saved: { transaction, lastValidBlockHeight }, observations, signed,
+    setHeight: (height: number) => { finalizedHeight = height; }, verify: feature.verifyUnsentExpiry };
+}
+
+test("reference unsent expiry binds the exact signed message to finalized expiry and absent signature history", async () => {
+  const f = await expiryFixture();
+  f.setHeight(f.saved.lastValidBlockHeight);
+  assert.deepEqual(await f.verify(f.candidate, f.expected, f.saved), { status: "unknown" });
+  assert.equal(f.observations.some(call => call.method === "isBlockhashValid"), false);
+  f.setHeight(f.saved.lastValidBlockHeight + 1);
+  f.h.controls.blockhashValid = true;
+  assert.deepEqual(await f.verify(f.candidate, f.expected, f.saved), { status: "unknown" });
+  f.h.controls.blockhashValid = false;
+  f.h.controls.finalMissing = false;
+  f.h.controls.finalStatus = "processed";
+  assert.deepEqual(await f.verify(f.candidate, f.expected, f.saved), { status: "unknown" });
+  f.h.controls.finalStatus = "finalized";
+  assert.deepEqual(await f.verify(f.candidate, f.expected, f.saved), { status: "unknown" });
+  f.h.controls.finalMissing = true;
+  assert.deepEqual(await f.verify(f.candidate, f.expected, f.saved), {
+    status: "expired", commitment: "finalized", genesisHash: f.expected.genesisHash,
+    txid: f.candidate.txid, messageHash: f.candidate.messageHash,
+  });
+  const blockhash = f.observations.findLast(call => call.method === "isBlockhashValid");
+  const status = f.observations.findLast(call => call.method === "getSignatureStatuses");
+  assert.equal(blockhash?.params[0], f.signed.blockhash);
+  assert.deepEqual(blockhash?.params[1], { commitment: "finalized", minContextSlot: f.h.controls.rpcSlot });
+  assert.deepEqual(status?.params, [[f.candidate.txid], { searchTransactionHistory: true }]);
+  assert.equal(f.h.calls.some(call => call.method === "POST"), false);
+});
+
+test("reference unsent expiry remains unknown for wrong genesis or tampered signed bytes", async () => {
+  const f = await expiryFixture();
+  const changed = Buffer.from(f.saved.transaction, "base64");
+  changed[1] = changed[1]! ^ 1;
+  const badTransaction = { ...f.saved, transaction: changed.toString("base64") };
+  assert.deepEqual(await f.verify(f.candidate, f.expected, badTransaction), { status: "unknown" });
+  const changedSignature = encode58(decodeLegacy(badTransaction.transaction).signatures[0]!);
+  const badBinding = { ...f.candidate, txid: changedSignature, transactionHash: hashBytes(changed) };
+  assert.deepEqual(await f.verify(badBinding, f.expected, badTransaction), { status: "unknown" });
+  assert.deepEqual(await f.verify({ ...f.candidate, messageHash: "0".repeat(64) }, f.expected, f.saved), { status: "unknown" });
+  assert.equal(f.observations.length, 0);
+  f.h.controls.rpcGenesis = asset(18);
+  assert.deepEqual(await f.verify(f.candidate, f.expected, f.saved), { status: "unknown" });
+  assert.deepEqual(f.observations.map(call => call.method), ["getGenesisHash"]);
 });
 
 test("reference creation is inert and freezes caller-owned deployment configuration", async t => {
