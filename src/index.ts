@@ -1,9 +1,10 @@
 export { AudaceFiClient, ClientError, parseQuote, parseSubmission } from "./client.ts";
-export type { ClientOptions, FetchPort, IntentInput, Intent, OfficialProxyOptions, Quote, SingleQuote, RouteQuote, Submission } from "./client.ts";
+export type { ClientOptions, FetchPort, IntentInput, Intent, OfficialProxyOptions, Quote, SingleQuote, RouteQuote, Submission, SubmissionStatus, TerminalUnsent } from "./client.ts";
 export { FileJournal } from "./journal.ts";
 export type { JournalPolicy, JournalEvent, JournalCapacity } from "./journal.ts";
-export { runOperation, reconcileOperation, finalizeOperation, abandonOperation } from "./operation.ts";
-export type { Operation, OperationLimits, VerifiedTarget, OperatorPorts, OperationResult, FinalEvidence, PlanEvidence } from "./operation.ts";
+export { runOperation, reconcileOperation, finalizeOperation, reconcileExpiredUnsentOperation, abandonOperation } from "./operation.ts";
+export type { Operation, OperationLimits, VerifiedTarget, OperatorPorts, OperationResult, FinalEvidence, PlanEvidence,
+  UnsentExpiryCandidate, UnsentExpiryEvidence, UnsentExpiryInput, VerifyUnsentExpiry } from "./operation.ts";
 export { parseReadState, readStatePath } from "./contract.ts";
 export type { ReadState, Category, RankedCategory } from "./contract.ts";
 export { replay } from "./replay.ts";
