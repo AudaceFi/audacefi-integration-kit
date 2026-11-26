@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.2.4
 
-- Document the durable-record cutoff for terminal no-send recovery and clarify what the `terminalUnsent` attestation establishes.
+- Document the HTTP 409 `CLOSE_UNSENT_PREDATES_DURABLE_RECORD` refusal for intents whose player signature the official API recorded before `2026-09-25T00:00Z`. Treat the outcome as unknown, reconcile it from the chain using the operation's own evidence, and escalate.
+- Clarify that, for signatures recorded at or after the cutoff, `terminalUnsent` attests that no server-co-signed copy was recorded, broadcast or returned. Blockhash expiry still requires independent verification at finalized commitment.
+- Remove the stale version reference from the support guide.
 
 ## 1.2.3
 
