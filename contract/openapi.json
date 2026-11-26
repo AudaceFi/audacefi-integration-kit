@@ -1054,7 +1054,7 @@
       },
       "TerminalUnsent": {
         "type": "object",
-        "description": "The server closed this owned intent and fenced future submission of its exact stored player signature. The intent ID and signature must match the journal. This evidence does not establish blockhash expiry.",
+        "description": "The server closed this owned intent and fenced future submission of its exact stored player signature. On the official API, for intents signed at or after 2026-09-25T00:00Z, this also attests that the server never issued a co-signature for the transaction. Since that cutoff, the server durably records every co-signed transaction before broadcast. The intent ID and signature must match the journal. The kit verifies blockhash expiry independently at finalized commitment.",
         "additionalProperties": false,
         "required": ["protocol", "intentId", "playerSignature", "status"],
         "properties": {
