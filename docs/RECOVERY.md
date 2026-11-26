@@ -63,11 +63,11 @@ The supplied [reference finality verifier](REFERENCE.md) checks finalized status
 
 | Refusal (HTTP 409) | Operator action |
 | --- | --- |
-| `CLOSE_UNSENT_DISABLED` | Preserve the journal and wait for the approved deployment to enable closure. |
+| `CLOSE_UNSENT_DISABLED` | Preserve the journal. The API checks whether closure is enabled before checking the signature timestamp. If the server recorded the signature before the cutoff, follow the reconciliation guidance below. Otherwise wait for the approved deployment to enable closure. |
 | `CLOSE_UNSENT_SUBMISSION_RECORDED` | Reconcile the durable record through normal finality checks. |
 | `CLOSE_UNSENT_SIGNATURE_MISMATCH` | Check the account, intent and exact journal signature. Keep the operation pending while they differ. |
 | `CLOSE_UNSENT_INVALID_STATE` | Preserve the journal and ask the deployment operator to review the intent state. |
-| `CLOSE_UNSENT_PREDATES_DURABLE_RECORD` | The intent was signed before `2026-09-25T00:00Z`. This refusal leaves the intent unchanged. Treat the outcome as unknown, reconcile it from the chain using the operation's own evidence, and escalate to the deployment operator. |
+| `CLOSE_UNSENT_PREDATES_DURABLE_RECORD` | The server recorded the player signature before `2026-09-25T00:00Z`. This refusal leaves the intent unchanged. Treat the outcome as unknown, reconcile it from the chain using the operation's own evidence, and escalate to the deployment operator. |
 
 #### Close the original journal
 
