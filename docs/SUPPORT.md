@@ -1,6 +1,6 @@
 # Support
 
-Version 1.2.2 supplies a source integration client with local simulated qualification. Support covers installation, client contract behavior, both operator interfaces, journaling/recovery, synthetic examples and reproducible bugs in those components.
+The source integration kit includes local simulated qualification. Support covers installation, client contract behavior, both operator interfaces, journaling/recovery, synthetic examples and reproducible bugs in those components.
 
 Maintainer support is best effort, with intended weekly triage and no contractual response, uptime, maintenance-duration or fix SLA. The accountable maintainer is Jordan ([@buchjordan](https://github.com/buchjordan)), designated by the owner. Non-sensitive bugs use repository issues; suspected vulnerabilities use GitHub Private Vulnerability Reporting, as explained in [SECURITY](../SECURITY.md). If that form is not available to you, arrange a confidential route with the maintainer through a private contact you already have, without putting sensitive details in an issue. No personal email or verified alternate contact is published. Do not change visibility as part of a support check.
 

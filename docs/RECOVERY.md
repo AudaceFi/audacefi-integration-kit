@@ -61,12 +61,13 @@ The supplied [reference finality verifier](REFERENCE.md) checks finalized status
    **Keep the intent in `signed` for this step.** Posting `failed` through `/result` first makes the intent ineligible for this closure and produces no attestation.
 3. A successful closure and an exact replay while closure is enabled return HTTP 200. If the write response is lost, read `GET /v1/swap-intents/{id}/submission` to reconcile it. Continue only when that lookup shows `submission: null` and a matching `terminalUnsent` with protocol `audacefi.bench.terminal-unsent.v1` and `status: failed`. A previous successful closure remains readable when new closures are disabled.
 
-| Refusal | Operator action |
+| Refusal (HTTP 409) | Operator action |
 | --- | --- |
-| `CLOSE_UNSENT_DISABLED` | Preserve the journal and wait for the approved deployment to enable closure. |
+| `CLOSE_UNSENT_DISABLED` | Preserve the journal. The API checks whether closure is enabled before checking the signature timestamp. If the server recorded the signature before the cutoff, follow the reconciliation guidance below. Otherwise wait for the approved deployment to enable closure. |
 | `CLOSE_UNSENT_SUBMISSION_RECORDED` | Reconcile the durable record through normal finality checks. |
 | `CLOSE_UNSENT_SIGNATURE_MISMATCH` | Check the account, intent and exact journal signature. Keep the operation pending while they differ. |
 | `CLOSE_UNSENT_INVALID_STATE` | Preserve the journal and ask the deployment operator to review the intent state. |
+| `CLOSE_UNSENT_PREDATES_DURABLE_RECORD` | The server recorded the player signature before `2026-09-25T00:00Z`. This refusal leaves the intent unchanged. Treat the outcome as unknown, reconcile it from the chain using the operation's own evidence, and escalate to the deployment operator. |
 
 #### Close the original journal
 

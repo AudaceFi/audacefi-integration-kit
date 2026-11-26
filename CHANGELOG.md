@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Document the durable-record cutoff for terminal no-send recovery and clarify what the `terminalUnsent` attestation establishes.
+
 ## 1.2.3
 
 - Recover an expired, unacknowledged send in the original journal when the server returns matching `terminalUnsent` evidence and the original signed transaction is proven expired at finalized commitment. Recovery keeps the reservation counted and neither signs nor resends.
